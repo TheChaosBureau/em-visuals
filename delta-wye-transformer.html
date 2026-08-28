@@ -177,7 +177,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
     <section>
       <div class="eyebrow">Load</div>
       <div class="sl"><label>load</label><input type="range" id="sL" min="0" max="100" step="1" value="50"><b id="vL">50%</b></div>
-      <div class="note" style="margin-top:5px">Per-unit secondary current demand, balanced across phases. Wired in Task 6/7.</div>
+      <div class="note" style="margin-top:5px">Per-unit secondary current demand, balanced across phases. Scales the leakage-B and induced-E arrows below; core flux is load-independent.</div>
     </section>
 
     <section id="readout">
@@ -246,12 +246,29 @@ const TAU = Math.PI * 2;
 const { limbX, limbTop, rCore, rLV, rHV, windHalf } = GEOM;
 
 const PHASE_HEX = [0xe8544b, 0xf2c14e, 0x4fa3e0];
+const FLUX_RAMP = [[0.00,0x2e,0x2a,0x6b],[0.34,0x1f,0x6e,0x8c],[0.62,0x33,0xcf,0xc0],[0.85,0xa8,0xe8,0xf0],[1.00,0xdc,0xf3,0xff]];
+
+// Maps u in [0,1] to an [r,g,b] triple through FLUX_RAMP's indigo-to-white
+// stops (cloned from rotating-field-machine.html's ramp()).
+function ramp(u) {
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  for (let i = 0; i < FLUX_RAMP.length - 1; i++) {
+    const a = FLUX_RAMP[i], b = FLUX_RAMP[i + 1];
+    if (u <= b[0]) {
+      const f = (u - a[0]) / (b[0] - a[0] || 1);
+      return [(a[1] + (b[1] - a[1]) * f) / 255, (a[2] + (b[2] - a[2]) * f) / 255, (a[3] + (b[3] - a[3]) * f) / 255];
+    }
+  }
+  const z = FLUX_RAMP[FLUX_RAMP.length - 1];
+  return [z[1] / 255, z[2] / 255, z[3] / 255];
+}
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Page state. Structure/drive fields are wired to visible behaviour in this
-// task; the field-render and load fields are wired starting Task 6/7 —
-// consumers there read S.showPhi / S.showLeakB / S.showE / S.load.
+// Page state. Structure/drive fields are wired to visible behaviour on the
+// static meshes; the field-render and load fields (S.showPhi / S.showLeakB /
+// S.showE / S.load) are consumed by the flux/leakage/induced layers below
+// (Task 6) — the scope canvases and full readout table stay Task 7.
 const S = {
   t: 0, playing: !reduceMotion, speed: 0.01,
   showCore: true, showW1: true, showW2: true, showJumpers: true,
@@ -455,9 +472,281 @@ function buildMeshes() {
 buildMeshes();
 
 /* ─────────────────────────────────────────────── Task 6/7 precompute seam
-   Field-line/bundle geometry (fluxBundleSpans, windingSegs, fluxLoopSegs)
-   and the Biot–Savart kernels (fieldB, fieldA) get wired in here, driven by
-   solve(S.load). Nothing in this task calls solve() yet. */
+   Precompute (once, synchronous — well under a video frame): the full-load
+   circuit solve and its two field-source segment sets, the B/E probe grids,
+   and the fixed Bref/Eref normalization constants. Field-line/bundle
+   geometry (fluxBundleSpans, windingSegs, fluxLoopSegs) and the Biot–Savart
+   kernels (fieldB, fieldA) are consumed here, driven by solve(1) — PHI is
+   load-independent so the flux-bundle phasors need no re-solve; only the
+   per-frame B/E blend below reads S.load. Nothing here runs again after
+   boot: no recompute on the load or time sliders. */
+
+// -- B probes: y=0 mid-plane grid, skipping points inside the core iron or
+// the winding annuli (checked in x-z only, since every probe has y=0). ----
+const B_STEP = 0.22, B_XMAX = 3.4, B_ZMAX = 2.2, IRON_MARGIN = 0.05;
+function nearIron(x, z) {
+  for (const lx of limbX) {
+    if (Math.abs(x - lx) < rCore + IRON_MARGIN && Math.abs(z) < limbTop + IRON_MARGIN) return true;
+  }
+  for (const zy of [limbTop, -limbTop]) {
+    if (Math.abs(z - zy) < rCore + IRON_MARGIN &&
+        x > limbX[0] - rCore - IRON_MARGIN && x < limbX[2] + rCore + IRON_MARGIN) return true;
+  }
+  return false;
+}
+function nearWinding(x, z) {
+  for (const lx of limbX) {
+    if (Math.abs(x - lx) < rHV + IRON_MARGIN && Math.abs(z) < windHalf + IRON_MARGIN) return true;
+  }
+  return false;
+}
+function bProbePoints() {
+  const pts = [];
+  for (let x = -B_XMAX; x <= B_XMAX + 1e-9; x += B_STEP) {
+    for (let z = -B_ZMAX; z <= B_ZMAX + 1e-9; z += B_STEP) {
+      if (nearIron(x, z) || nearWinding(x, z)) continue;
+      pts.push([x, 0, z]);
+    }
+  }
+  return pts;
+}
+
+// -- E probes: rings of 16 around each limb, 5 z-levels, tagged with the
+// owning limb index for the per-probe azimuthal-sense color test. ---------
+const E_RING_N = 16, E_RADIUS = 0.72, E_ZS = [-0.9, -0.45, 0, 0.45, 0.9];
+function eProbePoints() {
+  const pts = [];
+  for (let k = 0; k < 3; k++) {
+    for (let i = 0; i < E_RING_N; i++) {
+      const th = i * TAU / E_RING_N;
+      const dx = E_RADIUS * Math.cos(th), dy = E_RADIUS * Math.sin(th);
+      for (const z of E_ZS) pts.push({ x: limbX[k] + dx, y: dy, z, k });
+    }
+  }
+  return pts;
+}
+
+// -- Flux-bundle strand offsets: one centre strand + 6 around a hex ring,
+// expressed in the (in-plane-perpendicular, y) basis built per span below. -
+const STRANDS = 7, STRAND_R = rCore * 0.55;
+const STRAND_OFFSETS = Array.from({ length: STRANDS }, (_, i) =>
+  i === 0 ? [0, 0] : [Math.cos((i - 1) * TAU / (STRANDS - 1)), Math.sin((i - 1) * TAU / (STRANDS - 1))]);
+
+let BP = null, EP = null, FLUX_SPANS = [], Bref = 1, Eref = 1, PhiMax = 1;
+let gFlux, gBArrows, gEArrows;
+
+function precompute() {
+  const SOL1 = solve(1);
+  const SEGW = windingSegs(SOL1);
+  const SEGF = fluxLoopSegs(SOL1);
+
+  const bPts = bProbePoints();
+  BP = { p: new Float32Array(bPts.length * 3), bc: new Float32Array(bPts.length * 3), bs: new Float32Array(bPts.length * 3), n: bPts.length };
+  for (let i = 0; i < bPts.length; i++) {
+    const [x, y, z] = bPts[i];
+    const F = fieldB(x, y, z, SEGW);
+    BP.p[i*3] = x; BP.p[i*3+1] = y; BP.p[i*3+2] = z;
+    BP.bc[i*3] = F[0]; BP.bc[i*3+1] = F[1]; BP.bc[i*3+2] = F[2];
+    BP.bs[i*3] = F[3]; BP.bs[i*3+1] = F[4]; BP.bs[i*3+2] = F[5];
+  }
+
+  const ePts = eProbePoints();
+  EP = {
+    p: new Float32Array(ePts.length * 3), k: new Int8Array(ePts.length),
+    awc: new Float32Array(ePts.length * 3), aws: new Float32Array(ePts.length * 3),
+    acc: new Float32Array(ePts.length * 3), acs: new Float32Array(ePts.length * 3),
+    n: ePts.length
+  };
+  for (let i = 0; i < ePts.length; i++) {
+    const { x, y, z, k } = ePts[i];
+    const Fw = fieldA(x, y, z, SEGW);   // winding part — load-scaled at display time
+    const Fc = fieldB(x, y, z, SEGF);   // core part (flux-tube duality) — load-independent
+    EP.p[i*3] = x; EP.p[i*3+1] = y; EP.p[i*3+2] = z; EP.k[i] = k;
+    EP.awc[i*3] = Fw[0]; EP.awc[i*3+1] = Fw[1]; EP.awc[i*3+2] = Fw[2];
+    EP.aws[i*3] = Fw[3]; EP.aws[i*3+1] = Fw[4]; EP.aws[i*3+2] = Fw[5];
+    EP.acc[i*3] = Fc[0]; EP.acc[i*3+1] = Fc[1]; EP.acc[i*3+2] = Fc[2];
+    EP.acs[i*3] = Fc[3]; EP.acs[i*3+1] = Fc[4]; EP.acs[i*3+2] = Fc[5];
+  }
+
+  // Bref: |B| at full load, t=0 (c=1, s=0 -> B = Bc) — a fixed constant so
+  // the load slider visibly grows/shrinks the leakage arrows against it.
+  let bm = 0;
+  for (let i = 0; i < BP.n; i++) bm = Math.max(bm, Math.hypot(BP.bc[i*3], BP.bc[i*3+1], BP.bc[i*3+2]));
+  Bref = bm || 1;
+
+  // Eref: |E| at no load, t=0 (core part only: E(0) = -Acs) — fixed, guards
+  // divide-by-zero downstream.
+  let em = 0;
+  for (let i = 0; i < EP.n; i++) em = Math.max(em, Math.hypot(EP.acs[i*3], EP.acs[i*3+1], EP.acs[i*3+2]));
+  Eref = em || 1;
+
+  // Flux-bundle spans: precompute each span's basis (direction, in-plane
+  // perpendicular) and its (wc, ws) flux phasor — PHI is load-independent,
+  // so this never needs to be touched again after boot.
+  PhiMax = C.abs(SOL1.PHI[0]) || 1;
+  FLUX_SPANS = fluxBundleSpans().map(sp => {
+    const from3 = [sp.from[0], 0, sp.from[1]], to3 = [sp.to[0], 0, sp.to[1]];
+    let dx = to3[0] - from3[0], dz = to3[2] - from3[2];
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    const [wc, ws] = toWcWs(sp.phasorOf(SOL1));
+    return { from3, to3, dir: [dx, 0, dz], perp: [dz, -dx], wc, ws };
+  });
+}
+
+function buildFieldGeometry() {
+  // Flux bundles: each strand contributes a 2-vertex line plus a 6-vertex
+  // arrowhead (shaft + two head strokes).
+  const nFluxVerts = FLUX_SPANS.length * STRANDS * 8;
+  const fluxGeo = new THREE.BufferGeometry();
+  fluxGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nFluxVerts * 3), 3));
+  fluxGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nFluxVerts * 3), 3));
+  gFlux = new THREE.LineSegments(fluxGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gFlux.frustumCulled = false; modelRoot.add(gFlux);
+
+  // Leakage-B and induced-E arrows: each probe contributes a 6-vertex arrow
+  // (shaft + two head strokes), buffers sized once to the probe counts above.
+  const bGeo = new THREE.BufferGeometry();
+  bGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BP.n * 6 * 3), 3));
+  bGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(BP.n * 6 * 3), 3));
+  gBArrows = new THREE.LineSegments(bGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gBArrows.frustumCulled = false; modelRoot.add(gBArrows);
+
+  const eGeo = new THREE.BufferGeometry();
+  eGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(EP.n * 6 * 3), 3));
+  eGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(EP.n * 6 * 3), 3));
+  gEArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gEArrows.frustumCulled = false; modelRoot.add(gEArrows);
+}
+
+precompute();
+buildFieldGeometry();
+
+// Arrow construction cloned from updateParticles: a tail-to-tip shaft
+// straddling the given centre, plus two head strokes flared from a point H
+// behind the tip. Used for the flux-bundle mid-span direction arrowheads.
+function emitCenteredArrow(pos, col, vi, cx, cy, cz, dx, dy, dz, L, H, rgb) {
+  const tailx = cx - dx*L/2, taily = cy - dy*L/2, tailz = cz - dz*L/2;
+  const tipx  = cx + dx*L/2, tipy  = cy + dy*L/2, tipz  = cz + dz*L/2;
+  let ux = -dy, uy = dx, uz = 0, um = Math.hypot(ux, uy, uz);
+  if (um < 0.1) { ux = 0; uy = -dz; uz = dy; um = Math.hypot(ux, uy, uz); }
+  ux /= um; uy /= um; uz /= um;
+  const basex = tipx - dx*H, basey = tipy - dy*H, basez = tipz - dz*H;
+  const put = (x, y, z) => {
+    pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
+    col[vi*3] = rgb[0]; col[vi*3+1] = rgb[1]; col[vi*3+2] = rgb[2]; vi++;
+  };
+  put(tailx, taily, tailz); put(tipx, tipy, tipz);
+  put(tipx, tipy, tipz); put(basex + ux*H*0.55, basey + uy*H*0.55, basez + uz*H*0.55);
+  put(tipx, tipy, tipz); put(basex - ux*H*0.55, basey - uy*H*0.55, basez - uz*H*0.55);
+  return vi;
+}
+
+// Arrow construction cloned from updateE: a shaft from the field point out
+// to the tip, plus two head strokes flared 0.3*L behind the tip, all drawn
+// at brightness b. Used for the B/E probe arrows.
+function emitFieldArrow(pos, col, vi, ox, oy, oz, dx, dy, dz, L, rgb, b) {
+  const tipx = ox + dx*L, tipy = oy + dy*L, tipz = oz + dz*L;
+  let ux = -dy, uy = dx, uz = 0, um = Math.hypot(ux, uy, uz);
+  if (um < 0.1) { ux = 0; uy = -dz; uz = dy; um = Math.hypot(ux, uy, uz); }
+  ux /= um; uy /= um; uz /= um;
+  const backx = tipx - dx*0.3*L, backy = tipy - dy*0.3*L, backz = tipz - dz*0.3*L;
+  const put = (x, y, z, f) => {
+    pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
+    col[vi*3] = rgb[0]*f; col[vi*3+1] = rgb[1]*f; col[vi*3+2] = rgb[2]*f; vi++;
+  };
+  put(ox, oy, oz, b*0.22); put(tipx, tipy, tipz, b);
+  put(tipx, tipy, tipz, b); put(backx + ux*0.14*L, backy + uy*0.14*L, backz + uz*0.14*L, b);
+  put(tipx, tipy, tipz, b); put(backx - ux*0.14*L, backy - uy*0.14*L, backz - uz*0.14*L, b);
+  return vi;
+}
+
+// Core-flux bundles: 7 strands per span, colored by |phi(t)|/Phimax through
+// FLUX_RAMP, each with a mid-span arrowhead that flips with sign(phi(t)).
+// PHI is load-independent, so this reads only S.t (via c, s) — never S.load.
+const FLUX_ARROW_L = rCore * 1.15, FLUX_ARROW_H = rCore * 0.5;
+function updateFlux(c, s) {
+  const pos = gFlux.geometry.attributes.position.array, col = gFlux.geometry.attributes.color.array;
+  let vi = 0;
+  for (const sp of FLUX_SPANS) {
+    const phi = sp.wc*c + sp.ws*s;
+    const rgb = ramp(Math.abs(phi) / PhiMax);
+    const sgn = phi >= 0 ? 1 : -1;
+    for (const [op, oy] of STRAND_OFFSETS) {
+      const ox = sp.perp[0]*op*STRAND_R, oz = sp.perp[1]*op*STRAND_R, oyy = oy*STRAND_R;
+      const ax = sp.from3[0]+ox, ay = oyy, az = sp.from3[2]+oz;
+      const bx = sp.to3[0]+ox,   by = oyy, bz = sp.to3[2]+oz;
+      pos[vi*3]=ax; pos[vi*3+1]=ay; pos[vi*3+2]=az; col[vi*3]=rgb[0]; col[vi*3+1]=rgb[1]; col[vi*3+2]=rgb[2]; vi++;
+      pos[vi*3]=bx; pos[vi*3+1]=by; pos[vi*3+2]=bz; col[vi*3]=rgb[0]; col[vi*3+1]=rgb[1]; col[vi*3+2]=rgb[2]; vi++;
+      vi = emitCenteredArrow(pos, col, vi, (ax+bx)/2, (ay+by)/2, (az+bz)/2,
+        sp.dir[0]*sgn, sp.dir[1]*sgn, sp.dir[2]*sgn, FLUX_ARROW_L, FLUX_ARROW_H, rgb);
+    }
+  }
+  gFlux.geometry.setDrawRange(0, vi);
+  gFlux.geometry.attributes.position.needsUpdate = true;
+  gFlux.geometry.attributes.color.needsUpdate = true;
+}
+
+// Leakage-B arrows: B(t) = load * (c*Bc + s*Bs) — linear in load because
+// balanced resistive Is scales uniformly with it. At load=0 every arrow's
+// magnitude is exactly 0, so nothing is drawn.
+const B_ARROW_L = 0.32;
+function updateBArrows(c, s, load) {
+  const pos = gBArrows.geometry.attributes.position.array, col = gBArrows.geometry.attributes.color.array;
+  let vi = 0;
+  for (let i = 0; i < BP.n; i++) {
+    const bx = load*(c*BP.bc[i*3]   + s*BP.bs[i*3]);
+    const by = load*(c*BP.bc[i*3+1] + s*BP.bs[i*3+1]);
+    const bz = load*(c*BP.bc[i*3+2] + s*BP.bs[i*3+2]);
+    const mag = Math.hypot(bx, by, bz);
+    if (mag < 1e-9) continue;
+    const ratio = Math.min(1, mag / Bref);
+    vi = emitFieldArrow(pos, col, vi, BP.p[i*3], BP.p[i*3+1], BP.p[i*3+2],
+      bx/mag, by/mag, bz/mag, ratio * B_ARROW_L, ramp(ratio), Math.min(1, 0.3 + 0.8*ratio));
+  }
+  gBArrows.geometry.setDrawRange(0, vi);
+  gBArrows.geometry.attributes.position.needsUpdate = true;
+  gBArrows.geometry.attributes.color.needsUpdate = true;
+}
+
+// Induced-E arrows: E(t) = w*[s*(load*Awc + Acc) - c*(load*Aws + Acs)], w=1.
+// Load multiplies ONLY the winding part (Awc/Aws) — the core part (Acc/Acs)
+// is fixed, so E is nonzero even at load=0. Two-tone by the sign of
+// E . (azimuthal unit vector around the probe's own limb axis).
+const E_ARROW_SCALE = 0.42 / Eref;
+const EMB_RGB = [1.0, 0.57, 0.32], VIO_RGB = [0.61, 0.48, 1.0];
+function updateEArrows(c, s, load) {
+  const pos = gEArrows.geometry.attributes.position.array, col = gEArrows.geometry.attributes.color.array;
+  let vi = 0;
+  for (let i = 0; i < EP.n; i++) {
+    const cx = load*EP.awc[i*3]   + EP.acc[i*3],   sx = load*EP.aws[i*3]   + EP.acs[i*3];
+    const cy = load*EP.awc[i*3+1] + EP.acc[i*3+1], sy = load*EP.aws[i*3+1] + EP.acs[i*3+1];
+    const cz = load*EP.awc[i*3+2] + EP.acc[i*3+2], sz = load*EP.aws[i*3+2] + EP.acs[i*3+2];
+    const ex = s*cx - c*sx, ey = s*cy - c*sy, ez = s*cz - c*sz;
+    const mag = Math.hypot(ex, ey, ez);
+    if (mag < 1e-9) continue;
+    const px = EP.p[i*3], py = EP.p[i*3+1], pz = EP.p[i*3+2];
+    const lx = limbX[EP.k[i]];
+    // u = normalize(cross([0,0,1], [px-lx, py, 0])) = [-py, px-lx, 0]; only
+    // the sign of E . u is used, so u need not be normalized here.
+    const dot = ex*(-py) + ey*(px - lx);
+    const rgb = dot >= 0 ? EMB_RGB : VIO_RGB;
+    const b = Math.min(1, 0.24 + 0.9*mag/Eref);
+    vi = emitFieldArrow(pos, col, vi, px, py, pz, ex/mag, ey/mag, ez/mag, mag * E_ARROW_SCALE, rgb, b);
+  }
+  gEArrows.geometry.setDrawRange(0, vi);
+  gEArrows.geometry.attributes.position.needsUpdate = true;
+  gEArrows.geometry.attributes.color.needsUpdate = true;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    WebXR — view-only: placement (position/rotate/scale via the right/left
@@ -504,8 +793,9 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Frame — minimal for now: advance ωt, apply structure toggles, render.
-   Task 6/7 add flux/leakage/induced-field updates and scope drawing here.
+   Frame — advance ωt, apply structure toggles, blend/redraw the visible
+   field layers from the Task 6 precompute, render. Scope canvases and the
+   full readout table (i_s/i_p/i_line, ratios, Σφ residual) stay Task 7.
    ═══════════════════════════════════════════════════════════════════════════ */
 let last = 0;
 function frame(now) {
@@ -517,6 +807,14 @@ function frame(now) {
   gW1.visible = S.showW1;
   gW2.visible = S.showW2;
   gJumpers.visible = S.showJumpers;
+
+  gFlux.visible = S.showPhi;
+  gBArrows.visible = S.showLeakB;
+  gEArrows.visible = S.showE;
+  const c = Math.cos(S.t), s = Math.sin(S.t);
+  if (S.showPhi) updateFlux(c, s);
+  if (S.showLeakB) updateBArrows(c, s, S.load);
+  if (S.showE) updateEArrows(c, s, S.load);
 
   document.getElementById('rPh').textContent = 'ωt ' + (S.t * 180 / Math.PI).toFixed(1) + '°';
 
@@ -532,8 +830,8 @@ function bindBox(id, key) {
   el.addEventListener('change', () => S[key] = el.checked);
 }
 bindBox('cI', 'showCore'); bindBox('cW1', 'showW1'); bindBox('cW2', 'showW2'); bindBox('cJ', 'showJumpers');
-// cF/cB/cE (field render toggles) and sL (load) are wired to S here so the
-// control surface is ready, but nothing consumes them until Task 6/7.
+// cF/cB/cE (field render toggles) drive gFlux/gBArrows/gEArrows visibility
+// in frame(); sL drives S.load, read by the B/E blend each frame (Task 6).
 bindBox('cF', 'showPhi'); bindBox('cB', 'showLeakB'); bindBox('cE', 'showE');
 
 const sT = document.getElementById('sT'), vT = document.getElementById('vT');
