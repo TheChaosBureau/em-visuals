@@ -290,8 +290,9 @@ const modelRoot = new THREE.Group(); xrPlacement.add(modelRoot);
 // Maps the model's local +Z (limb axis) onto the XR world's +Y so the core
 // stands upright for a viewer standing on the floor, matching the desktop
 // Z-up view; local +X (limb spacing) is unaffected by a rotation about X.
+// XR-only: applied by resetXRPlacement() on sessionstart, restored to
+// identity on sessionend. Desktop keeps modelRoot at identity (native Z-up).
 const HORIZONTAL_ORIENTATION = -Math.PI / 2;
-modelRoot.rotation.set(HORIZONTAL_ORIENTATION, 0, 0);
 
 // ── camera rig (hand-rolled orbit) ──────────────────────────────────────────
 const cam = { tgt: new THREE.Vector3(0, 0, 0), r: 9.5, th: 0.72, ph: 1.14 };
@@ -498,7 +499,7 @@ renderer.xr.addEventListener('sessionend', () => {
   xrPlacement.position.set(0, 0, 0);
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(1);
-  modelRoot.rotation.set(HORIZONTAL_ORIENTATION, 0, 0);
+  modelRoot.rotation.set(0, 0, 0); // back to desktop's native Z-up orientation
   applyCam();
 });
 
