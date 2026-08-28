@@ -535,6 +535,12 @@ const STRAND_OFFSETS = Array.from({ length: STRANDS }, (_, i) =>
 let BP = null, EP = null, FLUX_SPANS = [], Bref = 1, Eref = 1, PhiMax = 1;
 let gFlux, gBArrows, gEArrows;
 
+// Load-independent phasor caches for the scope canvases and the fixed
+// readout rows (ratio/shift/Σφ residual) — filled from SOL1 inside the
+// precompute function below and never touched again: PHI, Up and secondary
+// line-line Vs don't depend on load (see solve()).
+let PHI_WCWS = [[0,0],[0,0],[0,0]], VG_UP = [[0,0],[0,0],[0,0]], VG_VS_LL = [[0,0],[0,0],[0,0]];
+
 function precompute() {
   const SOL1 = solve(1);
   const SEGW = windingSegs(SOL1);
@@ -584,6 +590,11 @@ function precompute() {
   // perpendicular) and its (wc, ws) flux phasor — PHI is load-independent,
   // so this never needs to be touched again after boot.
   PhiMax = C.abs(SOL1.PHI[0]) || 1;
+  PHI_WCWS = SOL1.PHI.map(toWcWs);
+  VG_UP = SOL1.Up;
+  VG_VS_LL = [0, 1, 2].map(k => C.sub(SOL1.Vs[k], SOL1.Vs[(k + 1) % 3]));
+  document.getElementById('rPhiResidual').textContent =
+    C.abs(SOL1.PHI.reduce((a, p) => C.add(a, p), [0, 0])).toFixed(3);
   FLUX_SPANS = fluxBundleSpans().map(sp => {
     const from3 = [sp.from[0], 0, sp.from[1]], to3 = [sp.to[0], 0, sp.to[1]];
     let dx = to3[0] - from3[0], dz = to3[2] - from3[2];
@@ -793,9 +804,111 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   Scopes + readouts — cloned from rotating-field-machine.html's drawScopes
+   idiom (clearRect, CSS-matching hex strokes, moving cursor + phase dots).
+   ═══════════════════════════════════════════════════════════════════════════ */
+const scPhi = document.getElementById('scPhi'), ctxPhi = scPhi.getContext('2d');
+const scVG = document.getElementById('scVG'), ctxVG = scVG.getContext('2d');
+const PH_CSS = ['#e8544b', '#f2c14e', '#4fa3e0'];
+const VG_GRAY = '#4e5d69';
+const VG_LABEL = ['A', 'B', 'C'];
+
+// Signed 3-decimal formatter for instantaneous current readouts, cloned
+// from rotating-field-machine.html's `fmt`.
+const fmt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(3);
+
+// Per-load phasor caches (Is/Ip/IlineP scale with load) — recomputed only
+// on a load-slider change, never per frame; per-frame readouts just replay
+// wc*cos(t)+ws*sin(t) against whichever of these is current.
+let LOAD_IS_WCWS = [[0,0],[0,0],[0,0]], LOAD_IP_WCWS = [[0,0],[0,0],[0,0]], LOAD_ILINE_WCWS = [[0,0],[0,0],[0,0]];
+
+function recomputeLoad() {
+  const sol = solve(S.load);
+  LOAD_IS_WCWS = sol.Is.map(toWcWs);
+  LOAD_IP_WCWS = sol.Ip.map(toWcWs);
+  LOAD_ILINE_WCWS = sol.IlineP.map(toWcWs);
+  // ratios.lineLine/angleDeg are load-independent in this model (Vs is the
+  // induced EMF, not a load-drop quantity) — recomputed here anyway to stay
+  // co-located with their solve() source rather than special-cased away.
+  document.getElementById('rRatio').textContent = sol.ratios.lineLine.toFixed(3);
+  document.getElementById('rShift').textContent =
+    (sol.ratios.angleDeg >= 0 ? '+' : '−') + Math.abs(sol.ratios.angleDeg).toFixed(1) + '°';
+  // Ip[0] is never zero (Imag alone already makes it nonzero at load 0), so
+  // this ratio needs no divide-by-zero guard — it naturally reads 1.0 there.
+  document.getElementById('rImagRatio').textContent =
+    (C.abs(sol.Imag[0]) / C.abs(sol.Ip[0])).toFixed(3);
+}
+
+// Limb-flux scope: three sinusoids over two periods, from each limb's
+// wc/ws phasor (load-independent), normalized to Phihat = PhiMax = |PHI[0]|.
+function drawScopePhi(t) {
+  const W = scPhi.width, H = scPhi.height, m = 6;
+  ctxPhi.clearRect(0, 0, W, H);
+  ctxPhi.strokeStyle = '#1a242e'; ctxPhi.lineWidth = 1;
+  ctxPhi.beginPath(); ctxPhi.moveTo(0, H / 2); ctxPhi.lineTo(W, H / 2); ctxPhi.stroke();
+  for (let k = 0; k < 3; k++) {
+    const [wc, ws] = PHI_WCWS[k];
+    ctxPhi.strokeStyle = PH_CSS[k]; ctxPhi.lineWidth = 1.4; ctxPhi.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const a = (x / W) * 2 * TAU;
+      const y = H / 2 - (wc * Math.cos(a) + ws * Math.sin(a)) / PhiMax * (H / 2 - m);
+      x ? ctxPhi.lineTo(x, y) : ctxPhi.moveTo(x, y);
+    }
+    ctxPhi.stroke();
+  }
+  const cx = ((t % TAU) / (2 * TAU)) * W;
+  ctxPhi.strokeStyle = 'rgba(51,207,192,.85)'; ctxPhi.lineWidth = 1;
+  ctxPhi.beginPath(); ctxPhi.moveTo(cx, 0); ctxPhi.lineTo(cx, H); ctxPhi.stroke();
+  for (let k = 0; k < 3; k++) {
+    const [wc, ws] = PHI_WCWS[k];
+    const y = H / 2 - (wc * Math.cos(t) + ws * Math.sin(t)) / PhiMax * (H / 2 - m);
+    ctxPhi.fillStyle = PH_CSS[k]; ctxPhi.beginPath(); ctxPhi.arc(cx, y, 2.6, 0, TAU); ctxPhi.fill();
+  }
+}
+
+// Vector-group scope: 6 phasors from center, each drawn at arg(phasor)+t so
+// the whole star co-rotates — the fixed 30° lead between a primary spoke and
+// its same-phase secondary spoke stays visually constant at any ωt or speed.
+// Canvas y is down, so screen angle uses y = cy - L*sin(theta) (both sets)
+// to keep the mapping consistent and the lead direction legible.
+function drawVectorGroup(t) {
+  const W = scVG.width, H = scVG.height, cx = W / 2, cy = H / 2;
+  ctxVG.clearRect(0, 0, W, H);
+  const Rmax = Math.min(cx, cy) - 8;
+  const maxAbs = Math.max(...VG_UP.map(C.abs), ...VG_VS_LL.map(C.abs)) || 1;
+  const scale = Rmax / maxAbs;
+
+  function spoke(ph, css) {
+    const ang = C.arg(ph) + t, L = C.abs(ph) * scale;
+    const x = cx + L * Math.cos(ang), y = cy - L * Math.sin(ang);
+    ctxVG.strokeStyle = css; ctxVG.lineWidth = 1.3;
+    ctxVG.beginPath(); ctxVG.moveTo(cx, cy); ctxVG.lineTo(x, y); ctxVG.stroke();
+    return [x, y];
+  }
+  for (let k = 0; k < 3; k++) {
+    const [x, y] = spoke(VG_UP[k], VG_GRAY);
+    ctxVG.fillStyle = VG_GRAY; ctxVG.font = '8px ui-monospace, monospace';
+    ctxVG.fillText(VG_LABEL[k], x + (x >= cx ? 2 : -8), y + (y >= cy ? 8 : -2));
+  }
+  for (let k = 0; k < 3; k++) spoke(VG_VS_LL[k], PH_CSS[k]);
+  ctxVG.fillStyle = '#33434f';
+  ctxVG.beginPath(); ctxVG.arc(cx, cy, 1.6, 0, TAU); ctxVG.fill();
+}
+
+const RID_IS = ['rIsA', 'rIsB', 'rIsC'], RID_IP = ['rIpA', 'rIpB', 'rIpC'], RID_ILINE = ['rIlineA', 'rIlineB', 'rIlineC'];
+function updateReadouts(c, s) {
+  for (let k = 0; k < 3; k++) {
+    document.getElementById(RID_IS[k]).textContent = fmt(LOAD_IS_WCWS[k][0] * c + LOAD_IS_WCWS[k][1] * s);
+    document.getElementById(RID_IP[k]).textContent = fmt(LOAD_IP_WCWS[k][0] * c + LOAD_IP_WCWS[k][1] * s);
+    document.getElementById(RID_ILINE[k]).textContent = fmt(LOAD_ILINE_WCWS[k][0] * c + LOAD_ILINE_WCWS[k][1] * s);
+  }
+}
+recomputeLoad();
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Frame — advance ωt, apply structure toggles, blend/redraw the visible
-   field layers from the Task 6 precompute, render. Scope canvases and the
-   full readout table (i_s/i_p/i_line, ratios, Σφ residual) stay Task 7.
+   field layers from the Task 6 precompute, redraw the scopes and readout
+   table (Task 7), render.
    ═══════════════════════════════════════════════════════════════════════════ */
 let last = 0;
 function frame(now) {
@@ -817,6 +930,9 @@ function frame(now) {
   if (S.showE) updateEArrows(c, s, S.load);
 
   document.getElementById('rPh').textContent = 'ωt ' + (S.t * 180 / Math.PI).toFixed(1) + '°';
+  drawScopePhi(S.t);
+  drawVectorGroup(S.t);
+  updateReadouts(c, s);
 
   renderer.render(scene, camera);
 }
@@ -845,7 +961,7 @@ const sS = document.getElementById('sS'), vS = document.getElementById('vS');
 sS.addEventListener('input', () => { S.speed = +sS.value / 100; vS.textContent = S.speed.toFixed(2) + '×'; });
 
 const sL = document.getElementById('sL'), vL = document.getElementById('vL');
-sL.addEventListener('input', () => { S.load = +sL.value / 100; vL.textContent = sL.value + '%'; });
+sL.addEventListener('input', () => { S.load = +sL.value / 100; vL.textContent = sL.value + '%'; recomputeLoad(); });
 
 function setPlaying(value) {
   S.playing = value;
