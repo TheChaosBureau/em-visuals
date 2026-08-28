@@ -4,6 +4,8 @@
 //
 // Units: mu0*I*N/(4*pi) = 1, R_bore = 1.
 
+import { fieldB, fieldA } from './field-kernels.js';
+
 const TAU = Math.PI * 2;
 const R_BORE = 1.0, LEN = 2.4, RW = 1.06, HEND = 0.30;
 const GAMMAS = [75, 105];          // concentric coil half-angles (deg) -> 12-slot, q=2
@@ -47,47 +49,6 @@ function buildSegments(machines) {
     }
   }
   return Float64Array.from(out);
-}
-
-// ------------------------------------------------------------ field kernels
-function fieldB(px, py, pz, SEG) {
-  let bcx = 0, bcy = 0, bcz = 0, bsx = 0, bsy = 0, bsz = 0;
-  for (let s = 0; s < SEG.length; s += 8) {
-    const ax = SEG[s] - px, ay = SEG[s + 1] - py, az = SEG[s + 2] - pz;
-    const bx = SEG[s + 3] - px, by = SEG[s + 4] - py, bz = SEG[s + 5] - pz;
-    const na = Math.sqrt(ax * ax + ay * ay + az * az);
-    const nb = Math.sqrt(bx * bx + by * by + bz * bz);
-    const dot = ax * bx + ay * by + az * bz;
-    const den = na * nb * (na * nb + dot);
-    if (!(den > 1e-14)) continue;
-    const f = (na + nb) / den;
-    const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
-    const wc = SEG[s + 6], ws = SEG[s + 7];
-    bcx += wc * f * cx; bcy += wc * f * cy; bcz += wc * f * cz;
-    bsx += ws * f * cx; bsy += ws * f * cy; bsz += ws * f * cz;
-  }
-  return [bcx, bcy, bcz, bsx, bsy, bsz];
-}
-
-function fieldA(px, py, pz, SEG) {
-  let acx = 0, acy = 0, acz = 0, asx = 0, asy = 0, asz = 0;
-  for (let s = 0; s < SEG.length; s += 8) {
-    const ax = SEG[s] - px, ay = SEG[s + 1] - py, az = SEG[s + 2] - pz;
-    const bx = SEG[s + 3] - px, by = SEG[s + 4] - py, bz = SEG[s + 5] - pz;
-    let lx = bx - ax, ly = by - ay, lz = bz - az;
-    const Lm = Math.sqrt(lx * lx + ly * ly + lz * lz);
-    if (!(Lm > 1e-12)) continue;
-    lx /= Lm; ly /= Lm; lz /= Lm;
-    const na = Math.sqrt(ax * ax + ay * ay + az * az);
-    const nb = Math.sqrt(bx * bx + by * by + bz * bz);
-    const num = nb + (bx * lx + by * ly + bz * lz);
-    const den = na + (ax * lx + ay * ly + az * lz);
-    const t = Math.log((num + 1e-12) / (den + 1e-12));
-    const wc = SEG[s + 6], ws = SEG[s + 7];
-    acx += wc * lx * t; acy += wc * ly * t; acz += wc * lz * t;
-    asx += ws * lx * t; asy += ws * ly * t; asz += ws * lz * t;
-  }
-  return [acx, acy, acz, asx, asy, asz];
 }
 
 const Bat = (p, SEG, t) => {

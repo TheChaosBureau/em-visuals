@@ -11,6 +11,7 @@ test('page is self-contained and project-path safe', () => {
   assert.match(html, /\.\/vendor\/three\.module\.js/);
   assert.match(html, /\.\/vendor\/VRButton\.js/);
   assert.match(html, /\.\/xr-controls\.js/);
+  assert.match(html, /\.\/field-kernels\.js/);
 });
 
 test('renderer uses the WebXR-owned animation loop', () => {
