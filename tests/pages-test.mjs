@@ -26,9 +26,22 @@ test('WebXR controllers can grab independently rooted motors', () => {
   assert.match(html, /controller\.attach\(root\)/);
   assert.match(html, /gMachines\.attach\(state\.root\)/);
   assert.match(html, /motorRoot\.userData\.machineIndex/);
-  assert.match(html, /machinePoses\[state\.motorIndex\]\.position\.copy/);
+  assert.match(html, /commitMotorRoot\(state\.motorIndex, state\.root\)/);
   assert.match(html, /scheduleFieldRecompute\(\)/);
   assert.match(html, /posedPoint\(M, machineIndex/);
+});
+
+test('desktop motors support translation, depth, rotation, and field rebuild', () => {
+  assert.match(html, /beginDesktopMotorDrag\(e\)/);
+  assert.match(html, /mode: event\.button === 0 \? \(event\.shiftKey \? 'depth' : 'move'\) : 'rotate'/);
+  assert.match(html, /d\.root\.quaternion\.premultiply\(q\)/);
+  assert.match(html, /scheduleFieldRecompute\(\)/);
+});
+
+test('field-line compression follows the current motor layout', () => {
+  assert.match(html, /squashCentre\.multiplyScalar\(1 \/ CXS\.length\)/);
+  assert.match(html, /p\.distanceTo\(squashCentre\) \+ 3\.5/);
+  assert.match(html, /squashCentre\.x\+dx\*f/);
 });
 
 test('motors default to a horizontal orientation on desktop and in WebXR', () => {

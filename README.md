@@ -24,6 +24,13 @@ The published build is deployed by GitHub Actions to `https://thechaosbureau.git
 
 Configure field and machine options in the browser panel before selecting **Enter VR**.
 
+## Desktop motor controls
+
+- Drag a motor to move it parallel to the screen
+- Shift-drag a motor to move it toward or away from the camera
+- Right-drag a motor to rotate it
+- Releasing the motor recomputes the combined electromagnetic field
+
 ## Verify
 
 ```sh
