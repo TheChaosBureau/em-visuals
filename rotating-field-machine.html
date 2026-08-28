@@ -242,7 +242,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
   </div>
 </div>
 
-<div id="hint">drag to orbit · scroll to zoom · shift-drag to pan</div>
+<div id="hint">empty: drag orbit · shift-drag pan · scroll zoom<br>motor: drag move · shift-drag depth · right-drag rotate</div>
 
 <div id="veil">
   <div class="t">Integrating Biot–Savart over the winding</div>
@@ -442,10 +442,12 @@ function applyCam() {
   let drag = null, px = 0, py = 0;
   const pt = e => e.touches ? e.touches[0] : e;
   cv.addEventListener('pointerdown', e => {
+    if (beginDesktopMotorDrag(e)) return;
     drag = (e.shiftKey || e.button === 2) ? 'pan' : 'rot';
     px = e.clientX; py = e.clientY; cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e => {
+    if (updateDesktopMotorDrag(e)) return;
     if (!drag) return;
     const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY;
     if (drag === 'rot') {
@@ -458,7 +460,10 @@ function applyCam() {
     }
     applyCam();
   });
-  const stop = e => { drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
+  const stop = e => {
+    if (endDesktopMotorDrag(e)) return;
+    drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
   cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => {
@@ -630,6 +635,8 @@ function ramp(u) {
 let SEG = null, G = null, GC = null, GRIDS = null, CXS = [0], MOM = [], EP = null, Bref = 1, Eref = 1;
 let CB = 1, SB = 0;   // blend coefficients, shared with the far field
 let nClosed = 0;
+const squashCentre = new THREE.Vector3();
+let squashRadius = 3.5;
 
 // Fine grid resolves the bore and end region; coarse grid carries the return
 // path out far enough for every seeded line to close on itself.
@@ -670,6 +677,11 @@ async function precompute(onProgress) {
   buildMeshes(coils);
 
   CXS = machineList(S.mode).map((M, i) => posedPoint(M, i, 0, 0, 0));
+  squashCentre.set(0, 0, 0);
+  for (const p of CXS) squashCentre.add(p);
+  squashCentre.multiplyScalar(1 / CXS.length);
+  squashRadius = 3.5;
+  for (const p of CXS) squashRadius = Math.max(squashRadius, p.distanceTo(squashCentre) + 3.5);
   MOM = machineList(S.mode).map((M, machineIndex) => {
     const centre = CXS[machineIndex];
     const s1 = packSegments(coils.filter(c => c.machineIndex === machineIndex));
@@ -801,10 +813,11 @@ function stepAt(x, y, z) {
 const _sq = [0, 0, 0];
 function squash(x, y, z) {
   if (!S.squash) { _sq[0]=x; _sq[1]=y; _sq[2]=z; return _sq; }
-  const r = Math.hypot(x, y, z), r0 = S.mode === 'single' ? 3.5 : 6.0, k = 2.2;
+  const dx = x - squashCentre.x, dy = y - squashCentre.y, dz = z - squashCentre.z;
+  const r = Math.hypot(dx, dy, dz), r0 = squashRadius, k = 2.2;
   if (r <= r0 || r < 1e-9) { _sq[0]=x; _sq[1]=y; _sq[2]=z; return _sq; }
   const f = (r0 + k * Math.log(1 + (r - r0) / k)) / r;
-  _sq[0]=x*f; _sq[1]=y*f; _sq[2]=z*f; return _sq;
+  _sq[0]=squashCentre.x+dx*f; _sq[1]=squashCentre.y+dy*f; _sq[2]=squashCentre.z+dz*f; return _sq;
 }
 
 // Seeds sit on the disc through the machine centre normal to m. A tube seeded
@@ -1073,19 +1086,102 @@ const grabRaycaster = new THREE.Raycaster();
 const grabOrigin = new THREE.Vector3();
 const grabDirection = new THREE.Vector3();
 let recomputeTimer = 0;
+let desktopDrag = null;
+const desktopPointer = new THREE.Vector2();
+const desktopPlane = new THREE.Plane();
+const desktopHitPoint = new THREE.Vector3();
+const desktopRaycaster = new THREE.Raycaster();
 
 function scheduleFieldRecompute() {
   clearTimeout(recomputeTimer);
   recomputeTimer = setTimeout(() => { recomputeTimer = 0; run(); }, 60);
 }
 
+function pointerNdc(event) {
+  const rect = cv.getBoundingClientRect();
+  desktopPointer.set(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  return desktopPointer;
+}
+
+function commitMotorRoot(motorIndex, root) {
+  const M = machineList(S.mode)[motorIndex];
+  machinePoses[motorIndex].position.copy(root.position).sub(new THREE.Vector3(M.cx, 0, 0));
+  machinePoses[motorIndex].quaternion.copy(root.quaternion).normalize();
+}
+
+function beginDesktopMotorDrag(event) {
+  if (!ready || renderer.xr.isPresenting || event.button > 2) return false;
+  desktopRaycaster.setFromCamera(pointerNdc(event), camera);
+  const hit = desktopRaycaster.intersectObjects(motorHitTargets, false)[0]?.object;
+  if (!hit) return false;
+  const motorIndex = hit.userData.machineIndex;
+  if (!beginGrab(grabOwners, motorIndex, 2)) return false;
+  const root = motorRoots[motorIndex];
+  const rootWorld = root.getWorldPosition(new THREE.Vector3());
+  const normal = camera.getWorldDirection(new THREE.Vector3());
+  desktopPlane.setFromNormalAndCoplanarPoint(normal, rootWorld);
+  desktopRaycaster.ray.intersectPlane(desktopPlane, desktopHitPoint);
+  const parentWorldQ = gMachines.getWorldQuaternion(new THREE.Quaternion());
+  const inverseParentQ = parentWorldQ.clone().invert();
+  const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).applyQuaternion(inverseParentQ).normalize();
+  const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).applyQuaternion(inverseParentQ).normalize();
+  desktopDrag = {
+    pointerId: event.pointerId, motorIndex, root, hit,
+    mode: event.button === 0 ? (event.shiftKey ? 'depth' : 'move') : 'rotate',
+    startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY,
+    startHit: desktopHitPoint.clone(), startWorld: rootWorld, localUp, localRight
+  };
+  hit.material.visible = true;
+  cv.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  return true;
+}
+
+function updateDesktopMotorDrag(event) {
+  if (!desktopDrag || event.pointerId !== desktopDrag.pointerId) return false;
+  const d = desktopDrag;
+  if (d.mode === 'move') {
+    desktopRaycaster.setFromCamera(pointerNdc(event), camera);
+    if (desktopRaycaster.ray.intersectPlane(desktopPlane, desktopHitPoint)) {
+      const world = d.startWorld.clone().add(desktopHitPoint).sub(d.startHit);
+      gMachines.updateWorldMatrix(true, false);
+      d.root.position.copy(gMachines.worldToLocal(world));
+    }
+  } else if (d.mode === 'depth') {
+    const amount = (event.clientY - d.startY) * cam.r * 0.0025;
+    const world = d.startWorld.clone().addScaledVector(camera.getWorldDirection(new THREE.Vector3()), amount);
+    gMachines.updateWorldMatrix(true, false);
+    d.root.position.copy(gMachines.worldToLocal(world));
+  } else {
+    const dx = event.clientX - d.lastX, dy = event.clientY - d.lastY;
+    const q = new THREE.Quaternion().setFromAxisAngle(d.localUp, -dx * 0.007);
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(d.localRight, -dy * 0.007));
+    d.root.quaternion.premultiply(q).normalize();
+    d.lastX = event.clientX; d.lastY = event.clientY;
+  }
+  event.preventDefault();
+  return true;
+}
+
+function endDesktopMotorDrag(event) {
+  if (!desktopDrag || event.pointerId !== desktopDrag.pointerId) return false;
+  const d = desktopDrag; desktopDrag = null;
+  commitMotorRoot(d.motorIndex, d.root);
+  endGrab(grabOwners, d.motorIndex, 2);
+  d.hit.material.visible = false;
+  try { cv.releasePointerCapture(event.pointerId); } catch (_) {}
+  scheduleFieldRecompute();
+  return true;
+}
+
 function releaseGrab(controllerId, recompute = true) {
   const state = grabState[controllerId];
   if (!state) return;
   if (state.root.parent) gMachines.attach(state.root);
-  const M = machineList(S.mode)[state.motorIndex];
-  machinePoses[state.motorIndex].position.copy(state.root.position).sub(new THREE.Vector3(M.cx, 0, 0));
-  machinePoses[state.motorIndex].quaternion.copy(state.root.quaternion).normalize();
+  commitMotorRoot(state.motorIndex, state.root);
   endGrab(grabOwners, state.motorIndex, controllerId);
   grabState[controllerId] = null;
   lastFieldUpdate = -Infinity;
@@ -1230,17 +1326,19 @@ function frame(now) {
     cm.mat.emissiveIntensity = 0.09 + 1.05 * Math.abs(i);
     cm.mat.visible = S.showW;
   }
-  for (const ch of gMachines.children) {
-    const k = ch.userData.kind;
-    if (k === 'iron') ch.visible = S.showI;
-    else if (k === 'rotor') ch.visible = S.showR;
-    else if (k === 'wall') ch.visible = S.showEz;
-    else if (k === 'm') {
-      ch.visible = S.showM;
-      const M = ch.userData.M;
-      const ang = Math.atan2(s * M.ss, c * M.sc);
-      ch.userData.inner.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0));
+  for (const root of motorRoots) {
+    for (const ch of root.children) {
+      const k = ch.userData.kind;
+      if (k === 'iron') ch.visible = S.showI;
+      else if (k === 'rotor') ch.visible = S.showR;
+      else if (k === 'wall') ch.visible = S.showEz;
+      else if (k === 'm') {
+        ch.visible = S.showM;
+        const M = ch.userData.M;
+        const ang = Math.atan2(s * M.ss, c * M.sc);
+        ch.userData.inner.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0));
+      }
     }
   }
   camera.getWorldDirection(clipPlane.normal).normalize();   // keep the far half
