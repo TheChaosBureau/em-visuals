@@ -35,6 +35,8 @@ canvas#gl{display:block;width:100%;height:100%}
 }
 #rail h1 em{font-style:normal;color:var(--accent)}
 .sub{margin-top:5px;color:var(--ink-faint);font-size:10.5px;line-height:1.5}
+.build-info{margin-top:7px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}
+.build-info code{color:var(--ink-dim);font:inherit}
 #scroll{flex:1;overflow-y:auto;overscroll-behavior:contain}
 #scroll::-webkit-scrollbar{width:7px}
 #scroll::-webkit-scrollbar-thumb{background:#1c2731;border-radius:4px}
@@ -156,6 +158,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
   <header>
     <h1>Rotating field —<br><em>2-pole machine</em></h1>
     <div class="sub">Air-cored Biot–Savart. 12&nbsp;slots, q&nbsp;=&nbsp;2, full pitch.<br>All quantities normalised, μ₀IN/4π&nbsp;=&nbsp;1.</div>
+    <div class="build-info">build <code>__BUILD_HASH__</code> · published <time datetime="__BUILD_TIME__">__BUILD_TIME__</time></div>
   </header>
 
   <div id="scroll">
@@ -394,6 +397,8 @@ const rim = new THREE.DirectionalLight(0x33cfc0, 0.5); rim.position.set(-6, -3, 
 // tracking space, so immersive placement and orientation live in separate roots.
 const xrPlacement = new THREE.Group(); scene.add(xrPlacement);
 const modelRoot = new THREE.Group(); xrPlacement.add(modelRoot);
+const HORIZONTAL_ORIENTATION = Math.PI / 2;
+modelRoot.rotation.set(0, HORIZONTAL_ORIENTATION, 0);
 
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0.02);
 
@@ -996,7 +1001,7 @@ function resetXRPlacement() {
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(fit);
   // The model's bore/shaft axis is +Z; present it horizontally along world +X.
-  modelRoot.rotation.set(0, Math.PI / 2, 0);
+  modelRoot.rotation.set(0, HORIZONTAL_ORIENTATION, 0);
 }
 
 function setPlaying(value) {
@@ -1042,7 +1047,7 @@ renderer.xr.addEventListener('sessionend', () => {
   xrPlacement.position.set(0, 0, 0);
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(1);
-  modelRoot.rotation.set(0, 0, 0);
+  modelRoot.rotation.set(0, HORIZONTAL_ORIENTATION, 0);
   xrButtons.right.fill(false);
   applyCam();
 });
