@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyDeadzone, nextScale, pressedEdge } from '../xr-controls.js';
+import { applyDeadzone, nextScale, pressedEdge, beginGrab, endGrab } from '../xr-controls.js';
 
 test('controller deadzone suppresses drift', () => {
   assert.equal(applyDeadzone(0.15), 0);
@@ -19,4 +19,13 @@ test('buttons fire only on the pressed edge', () => {
   assert.equal(pressedEdge(true, false), true);
   assert.equal(pressedEdge(true, true), false);
   assert.equal(pressedEdge(false, true), false);
+});
+
+test('a motor can only be owned by one controller at a time', () => {
+  const owners = [null, null];
+  assert.equal(beginGrab(owners, 0, 1), true);
+  assert.equal(beginGrab(owners, 0, 2), false);
+  assert.equal(endGrab(owners, 0, 2), false);
+  assert.equal(endGrab(owners, 0, 1), true);
+  assert.equal(beginGrab(owners, 0, 2), true);
 });

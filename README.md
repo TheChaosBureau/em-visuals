@@ -14,10 +14,13 @@ The published build is deployed by GitHub Actions to `https://thechaosbureau.git
 
 ## Quest controls
 
+- Point at either motor and hold the controller trigger to pick it up; release the trigger to place it
+- Each controller can hold a different motor at the same time
+- On release, the transformed winding and combined electromagnetic field are recomputed for the motor's new position and orientation
 - A: play or pause
-- B: reset placement, rotation, and scale
-- Right stick: rotate
-- Left stick up/down: scale
+- B: reset both motors plus the shared placement, rotation, and scale
+- Right stick: rotate the scene while no motor is held
+- Left stick up/down: scale the scene while no motor is held
 
 Configure field and machine options in the browser panel before selecting **Enter VR**.
 
