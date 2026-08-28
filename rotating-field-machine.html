@@ -162,7 +162,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
     <section>
       <div class="eyebrow">Fields</div>
       <label class="row"><input type="checkbox" id="cB" checked><span class="box"></span><span class="lbl">Flux lines <b style="color:var(--ink-faint)">B</b></span><span class="swatch" style="background:linear-gradient(90deg,#2e2a6b,#33cfc0)"></span></label>
-      <label class="row"><input type="checkbox" id="cP" checked><span class="box"></span><span class="lbl">Direction of B</span></label>
+      <label class="row"><input type="checkbox" id="cP" checked><span class="box"></span><span class="lbl">B direction arrows</span></label>
       <label class="row"><input type="checkbox" id="cE" checked><span class="box"></span><span class="lbl">Induced field <b style="color:var(--ink-faint)">E</b></span><span class="swatch" style="background:linear-gradient(90deg,#9b7bff,#ff9152)"></span></label>
       <label class="row"><input type="checkbox" id="cS"><span class="box"></span><span class="lbl">E<sub>z</sub> on bore wall</span></label>
       <label class="row"><input type="checkbox" id="cQ" checked><span class="box"></span><span class="lbl">Compress distant arcs</span></label>
@@ -540,32 +540,14 @@ const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
 lines.frustumCulled = false; modelRoot.add(lines);
 
 const partGeo = new THREE.BufferGeometry();
-partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
-partGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
-// A soft circular sprite avoids the oversized white squares that PointsMaterial
-// otherwise produces in a headset. At the default XR fit, 0.014 model units is
-// just over 3 mm across; desktop gets a modestly larger, still delicate marker.
-function particleTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  const glow = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
-  glow.addColorStop(0, 'rgba(255,255,255,1)');
-  glow.addColorStop(0.22, 'rgba(226,255,250,.98)');
-  glow.addColorStop(0.5, 'rgba(116,238,222,.42)');
-  glow.addColorStop(1, 'rgba(51,207,192,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, 64, 64);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-const particleMaterial = new THREE.PointsMaterial({
-  size: 0.042, map: particleTexture(), alphaTest: 0.025,
-  vertexColors: true, transparent: true, opacity: 0.82,
-  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false
+// Six arrows per traced line; each arrow is a shaft plus two head strokes.
+partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(46 * 6 * 6 * 3), 3));
+partGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(46 * 6 * 6 * 3), 3));
+const particleMaterial = new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.95,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false
 });
-const parts = new THREE.Points(partGeo, particleMaterial);
+const parts = new THREE.LineSegments(partGeo, particleMaterial);
 parts.frustumCulled = false; modelRoot.add(parts);
 
 const eGeo = new THREE.BufferGeometry();
@@ -859,18 +841,33 @@ function traceLines(t) {
   lineGeo.attributes.color.needsUpdate = true;
 }
 
-function updateParticles(phase) {
+function updateParticles() {
   const pos = partGeo.attributes.position.array, col = partGeo.attributes.color.array;
   let n = 0, cap = pos.length / 3;
+  const put = q => {
+    if (n >= cap) return;
+    pos[n*3] = q[0]; pos[n*3+1] = q[1]; pos[n*3+2] = q[2];
+    col[n*3] = 0.92; col[n*3+1] = 1.0; col[n*3+2] = 0.98; n++;
+  };
   for (const path of traced) {
     const np = path.length / 4, per = 6;
-    for (let i = 0; i < per && n < cap; i++) {
-      const u = ((i / per) + phase) % 1;
-      const j = Math.min(np - 1, Math.floor(u * np));
-      const q = squash(path[j*4], path[j*4+1], path[j*4+2]);
-      pos[n*3] = q[0]; pos[n*3+1] = q[1]; pos[n*3+2] = q[2];
-      col[n*3] = 0.92; col[n*3+1] = 1.0; col[n*3+2] = 0.98;
-      n++;
+    for (let i = 0; i < per && n + 6 <= cap; i++) {
+      const j = Math.min(np - 2, Math.max(1, Math.floor((i + 0.5) * np / per)));
+      const qa = squash(path[(j-1)*4], path[(j-1)*4+1], path[(j-1)*4+2]).slice();
+      const qb = squash(path[(j+1)*4], path[(j+1)*4+1], path[(j+1)*4+2]).slice();
+      const q = squash(path[j*4], path[j*4+1], path[j*4+2]).slice();
+      let dx = qb[0]-qa[0], dy = qb[1]-qa[1], dz = qb[2]-qa[2];
+      const dm = Math.hypot(dx,dy,dz) || 1; dx/=dm; dy/=dm; dz/=dm;
+      const L = 0.18, H = 0.075;
+      const tail = [q[0]-dx*L/2, q[1]-dy*L/2, q[2]-dz*L/2];
+      const tip  = [q[0]+dx*L/2, q[1]+dy*L/2, q[2]+dz*L/2];
+      let ux = -dy, uy = dx, uz = 0, um = Math.hypot(ux,uy,uz);
+      if (um < 0.1) { ux = 0; uy = -dz; uz = dy; um = Math.hypot(ux,uy,uz); }
+      ux/=um; uy/=um; uz/=um;
+      const base = [tip[0]-dx*H, tip[1]-dy*H, tip[2]-dz*H];
+      put(tail); put(tip);
+      put(tip); put([base[0]+ux*H*.55, base[1]+uy*H*.55, base[2]+uz*H*.55]);
+      put(tip); put([base[0]-ux*H*.55, base[1]-uy*H*.55, base[2]-uz*H*.55]);
     }
   }
   partGeo.setDrawRange(0, n);
@@ -988,7 +985,7 @@ function drawScopes(t) {
 /* ═══════════════════════════════════════════════════════════════════════════
    Frame
    ═══════════════════════════════════════════════════════════════════════════ */
-let last = performance.now(), advect = 0, ready = false, lastFieldUpdate = -Infinity;
+let last = performance.now(), ready = false, lastFieldUpdate = -Infinity;
 let xrScale = 1;
 const xrButtons = { right: [false, false] };
 
@@ -1037,7 +1034,6 @@ function updateXRControls(dt) {
 
 renderer.xr.addEventListener('sessionstart', () => {
   resetXRPlacement();
-  particleMaterial.size = 0.014;
   renderer.xr.setFoveation(0.75);
   lastFieldUpdate = -Infinity;
 });
@@ -1046,7 +1042,6 @@ renderer.xr.addEventListener('sessionend', () => {
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(1);
   modelRoot.rotation.set(0, 0, 0);
-  particleMaterial.size = 0.042;
   xrButtons.right.fill(false);
   applyCam();
 });
@@ -1056,7 +1051,6 @@ function frame(now) {
   if (!ready) return;
   if (renderer.xr.isPresenting) updateXRControls(dt);
   if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
-  advect = (advect + dt * 0.28) % 1;
 
   const c = Math.cos(S.t), s = Math.sin(S.t);
 
@@ -1087,7 +1081,7 @@ function frame(now) {
   if (S.showB) {
     const updateField = !renderer.xr.isPresenting || now - lastFieldUpdate >= 1000 / 24;
     if (updateField) { blend(c, s); traceLines(S.t); lastFieldUpdate = now; }
-    if (S.showP) updateParticles(advect);
+    if (S.showP) updateParticles();
   }
   const epk = updateE(c, s);
   if (S.showEz) updateWalls(c, s);
