@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rotating field — 2-pole machine, E and B</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080b0f; --panel:#0e141b; --panel-2:#131b24; --rule:#1e2a35;
+  --ink:#cbd7e1; --ink-dim:#7d8f9d; --ink-faint:#4e5d69;
+  --accent:#33cfc0;
+  --pa:#e8544b; --pb:#f2c14e; --pc:#4fa3e0;
+  --emb:#ff9152; --vio:#9b7bff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:var(--ink); font-size:12px; -webkit-font-smoothing:antialiased;
+}
+#stage{position:fixed;inset:0}
+canvas#gl{display:block;width:100%;height:100%}
+
+/* ---------------------------------------------------------------- panel */
+#rail{
+  position:fixed; top:0; left:0; bottom:0; width:274px; z-index:10;
+  background:linear-gradient(180deg,#0e141b 0%,#0b1017 100%);
+  border-right:1px solid var(--rule);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#rail header{padding:16px 16px 12px;border-bottom:1px solid var(--rule);flex:none}
+#rail h1{
+  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-weight:700; font-size:16px; letter-spacing:.01em; line-height:1.15; color:#eef4f8;
+}
+#rail h1 em{font-style:normal;color:var(--accent)}
+.sub{margin-top:5px;color:var(--ink-faint);font-size:10.5px;line-height:1.5}
+#scroll{flex:1;overflow-y:auto;overscroll-behavior:contain}
+#scroll::-webkit-scrollbar{width:7px}
+#scroll::-webkit-scrollbar-thumb{background:#1c2731;border-radius:4px}
+section{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:600;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
+  margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline;
+}
+.eyebrow b{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink-dim);letter-spacing:0}
+
+/* toggles */
+.row{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;user-select:none}
+.row:hover .lbl{color:#eef4f8}
+.box{
+  width:13px;height:13px;flex:none;border:1px solid #354553;border-radius:2.5px;
+  background:#0a1016;position:relative;transition:all .12s;
+}
+.row input{position:absolute;opacity:0;width:0;height:0}
+.row input:checked + .box{background:var(--accent);border-color:var(--accent)}
+.row input:checked + .box::after{
+  content:"";position:absolute;left:3.5px;top:1px;width:4px;height:7.5px;
+  border:solid #071014;border-width:0 2px 2px 0;transform:rotate(42deg);
+}
+.row input:focus-visible + .box{outline:2px solid var(--accent);outline-offset:2px}
+.lbl{color:var(--ink);transition:color .12s}
+.swatch{width:9px;height:9px;border-radius:50%;flex:none;margin-left:auto}
+
+/* segmented */
+.seg{display:grid;gap:3px;margin-top:2px}
+.seg button{
+  font:inherit;font-size:11px;text-align:left;padding:7px 9px;cursor:pointer;
+  background:#0a1016;color:var(--ink-dim);border:1px solid #24303b;border-radius:3px;
+  transition:all .12s;
+}
+.seg button:hover{color:var(--ink);border-color:#33434f}
+.seg button[aria-pressed="true"]{background:#10312e;color:var(--accent);border-color:#2a6b64}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg small{display:block;color:var(--ink-faint);font-size:9.5px;margin-top:2px}
+.seg button[aria-pressed="true"] small{color:#5d938c}
+
+/* slider */
+.sl{display:flex;align-items:center;gap:10px;padding:4px 0}
+.sl label{color:var(--ink-dim);flex:none;width:44px;font-size:10.5px}
+.sl input[type=range]{flex:1;-webkit-appearance:none;background:none;height:16px;cursor:pointer}
+.sl input[type=range]::-webkit-slider-runnable-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-moz-range-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent);
+  margin-top:-4.5px;box-shadow:0 0 0 3px rgba(51,207,192,.14);
+}
+.sl input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-radius:50%;background:var(--accent)}
+.sl b{font-weight:500;color:var(--ink);width:42px;text-align:right;font-size:10.5px;flex:none}
+
+/* readouts */
+table.rd{width:100%;border-collapse:collapse;font-size:11px}
+table.rd td{padding:3px 0}
+table.rd td:first-child{color:var(--ink-dim)}
+table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:#eef4f8}
+.note{color:var(--ink-faint);font-size:10px;line-height:1.65}
+.note b{color:var(--ink-dim);font-weight:500}
+
+/* ------------------------------------------------------------ scope strip */
+#scopes{
+  position:fixed;left:290px;bottom:16px;z-index:10;display:flex;gap:10px;flex-wrap:wrap;
+  pointer-events:none;
+}
+.scope{
+  background:rgba(10,15,20,.82);border:1px solid var(--rule);border-radius:4px;
+  padding:8px 10px 6px;backdrop-filter:blur(9px);
+}
+.scope .cap{
+  font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:600;font-size:9.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
+  display:flex;justify-content:space-between;gap:14px;margin-bottom:5px;
+}
+.scope .cap span{letter-spacing:0;font-family:"IBM Plex Mono",monospace;font-weight:500}
+.scope canvas{display:block}
+
+/* --------------------------------------------------------------- overlays */
+#hint{
+  position:fixed;right:14px;bottom:14px;z-index:10;color:var(--ink-faint);
+  font-size:10px;text-align:right;line-height:1.6;pointer-events:none;
+}
+#veil{
+  position:fixed;inset:0;z-index:40;background:#080b0f;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  transition:opacity .35s;
+}
+#veil.gone{opacity:0;pointer-events:none}
+#veil .t{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:13px;letter-spacing:.06em;color:var(--ink-dim)}
+#bar{width:230px;height:2px;background:#1c2731;border-radius:2px;overflow:hidden}
+#bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+#veil .pct{font-size:10.5px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+
+#toggleRail{
+  position:fixed;top:12px;left:12px;z-index:20;display:none;
+  font:inherit;font-size:11px;padding:7px 11px;border-radius:3px;cursor:pointer;
+  background:rgba(14,20,27,.92);color:var(--ink);border:1px solid var(--rule);
+}
+
+@media (max-width:820px){
+  #rail{width:100%;height:56%;top:auto;bottom:0;border-right:none;border-top:1px solid var(--rule)}
+  #rail.hidden{transform:translateY(calc(100% - 0px));display:none}
+  #toggleRail{display:block}
+  #scopes{left:12px;bottom:auto;top:56px;right:12px}
+  #hint{display:none}
+  .scope canvas{width:100%;height:auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="gl"></canvas></div>
+<button id="toggleRail" aria-expanded="true">Controls</button>
+
+<aside id="rail">
+  <header>
+    <h1>Rotating field —<br><em>2-pole machine</em></h1>
+    <div class="sub">Air-cored Biot–Savart. 12&nbsp;slots, q&nbsp;=&nbsp;2, full pitch.<br>All quantities normalised, μ₀IN/4π&nbsp;=&nbsp;1.</div>
+  </header>
+
+  <div id="scroll">
+    <section>
+      <div class="eyebrow">Fields</div>
+      <label class="row"><input type="checkbox" id="cB" checked><span class="box"></span><span class="lbl">Flux lines <b style="color:var(--ink-faint)">B</b></span><span class="swatch" style="background:linear-gradient(90deg,#2e2a6b,#33cfc0)"></span></label>
+      <label class="row"><input type="checkbox" id="cP" checked><span class="box"></span><span class="lbl">Direction of B</span></label>
+      <label class="row"><input type="checkbox" id="cE" checked><span class="box"></span><span class="lbl">Induced field <b style="color:var(--ink-faint)">E</b></span><span class="swatch" style="background:linear-gradient(90deg,#9b7bff,#ff9152)"></span></label>
+      <label class="row"><input type="checkbox" id="cS"><span class="box"></span><span class="lbl">E<sub>z</sub> on bore wall</span></label>
+      <label class="row"><input type="checkbox" id="cQ" checked><span class="box"></span><span class="lbl">Compress distant arcs</span></label>
+      <div class="sl"><label>count</label><input type="range" id="sN" min="9" max="45" step="3" value="24"><b id="vN">24</b></div>
+      <div class="note" style="margin-top:5px">Flux lines are seeded on a disc across the bore and traced until they return to their start. Compression shrinks the drawn radius beyond r&nbsp;=&nbsp;3.5 logarithmically; the paths themselves are computed in true space.</div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Machine</div>
+      <label class="row"><input type="checkbox" id="cW" checked><span class="box"></span><span class="lbl">Winding</span></label>
+      <label class="row"><input type="checkbox" id="cI" checked><span class="box"></span><span class="lbl">Stator core</span></label>
+      <label class="row"><input type="checkbox" id="cR"><span class="box"></span><span class="lbl">Rotor and shaft</span></label>
+      <label class="row"><input type="checkbox" id="cM" checked><span class="box"></span><span class="lbl">Moment vector <b style="color:var(--ink-faint)">m</b></span><span class="swatch" style="background:#eef4f8"></span></label>
+      <label class="row"><input type="checkbox" id="cC" checked><span class="box"></span><span class="lbl">Cut away far half</span></label>
+    </section>
+
+    <section>
+      <div class="eyebrow">Drive</div>
+      <div class="sl"><label>ωt</label><input type="range" id="sT" min="0" max="360" step="0.5" value="0"><b id="vT">0°</b></div>
+      <div class="sl"><label>speed</label><input type="range" id="sS" min="0" max="200" step="1" value="55"><b id="vS">0.55×</b></div>
+      <div class="seg" style="grid-template-columns:1fr 1fr;margin-top:7px">
+        <button id="bPlay" aria-pressed="true">Pause</button>
+        <button id="bView">Look down bore</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Second machine</div>
+      <div class="seg" id="modes">
+        <button data-m="single" aria-pressed="true">One machine</button>
+        <button data-m="parallel">Parallel<small>same phasing, in step</small></button>
+        <button data-m="antiphase">Anti-phase<small>all three leads reversed</small></button>
+        <button data-m="negseq">Reversed sequence<small>two leads swapped, m counter-rotates</small></button>
+      </div>
+    </section>
+
+    <section id="readout">
+      <div class="eyebrow">Readout <b id="rPh">ωt 0.0°</b></div>
+      <table class="rd">
+        <tr><td><span style="color:var(--pa)">■</span> i<sub>a</sub></td><td id="rIa">+1.000</td></tr>
+        <tr><td><span style="color:var(--pb)">■</span> i<sub>b</sub></td><td id="rIb">−0.500</td></tr>
+        <tr><td><span style="color:var(--pc)">■</span> i<sub>c</sub></td><td id="rIc">−0.500</td></tr>
+        <tr><td>|B| at bore centre</td><td id="rB">—</td></tr>
+        <tr><td>|E| peak on bore</td><td id="rE">—</td></tr>
+        <tr><td>flux loops closed</td><td id="rC">—</td></tr>
+      </table>
+      <div id="pair" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)">
+        <table class="rd">
+          <tr><td>U(t) / û</td><td id="rU">—</td></tr>
+          <tr><td>τ<sub>z</sub>(t) / û</td><td id="rTq">—</td></tr>
+          <tr><td>mean U / û</td><td id="rUm">—</td></tr>
+        </table>
+        <div class="note" style="margin-top:8px">û = (μ₀/4π)·m₀²/D³. Both terms ripple at <b>2ω</b> — the moments co-rotate, but their angle to the separation axis does not stay fixed.</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="eyebrow">What this model does not include</div>
+      <div class="note">
+        μ<sub>r</sub>&nbsp;=&nbsp;1 everywhere — no iron. With no yoke to carry the return flux, even the line hugging the bore wall closes out at r&nbsp;≈&nbsp;15; a real stator would bring it back through the back-iron in a few centimetres. No saturation either. Magnetoquasistatic: <b>E</b> shown is −∂A/∂t only, the part that does the work; conductor surface charge is dropped. Rotor is drawn but carries no current, so there is no slip, no induced rotor field and no torque.
+      </div>
+    </section>
+  </div>
+</aside>
+
+<div id="scopes">
+  <div class="scope">
+    <div class="cap">Phase currents <span id="capI">i / Î</span></div>
+    <canvas id="scI" width="330" height="76"></canvas>
+  </div>
+  <div class="scope" id="scopeU" style="display:none">
+    <div class="cap">Interaction energy <span id="capU">U / û</span></div>
+    <canvas id="scU" width="220" height="76"></canvas>
+  </div>
+</div>
+
+<div id="hint">drag to orbit · scroll to zoom · shift-drag to pan</div>
+
+<div id="veil">
+  <div class="t">Integrating Biot–Savart over the winding</div>
+  <div id="bar"><i></i></div>
+  <div class="pct" id="pct">0%</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   Geometry and physics constants.  Units: R_bore = 1, mu0*I*N/(4*pi) = 1.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2;
+const R_BORE = 1.0, LEN = 2.4, RW = 1.06, HEND = 0.30;
+const R_IN = 1.13, R_OUT = 1.80, R_ROT = 0.90, R_SH = 0.15;
+const GAMMAS = [75, 105];        // concentric coil half-angles -> 12 slots, q = 2
+const NARC = 14;
+const D_SEP = 4.6;               // centre-to-centre for the two-machine cases
+
+const PHASE_HEX = [0xe8544b, 0xf2c14e, 0x4fa3e0];
+const FLUX_RAMP = [[0.00,0x2e,0x2a,0x6b],[0.34,0x1f,0x6e,0x8c],[0.62,0x33,0xcf,0xc0],[0.85,0xa8,0xe8,0xf0],[1.00,0xdc,0xf3,0xff]];
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const S = {
+  t: 0, playing: !reduceMotion, speed: 0.55, mode: 'single',
+  showB: true, showP: true, showE: true, showEz: false, squash: true,
+  showW: true, showI: true, showR: false, showM: true, cut: true,
+  nSeed: 24
+};
+
+/* ─────────────────────────────────────────────────────── winding geometry */
+function coilPath(phi, gamDeg, cx) {
+  const gam = gamDeg * Math.PI / 180, th1 = phi + gam, th2 = phi - gam;
+  const zA = -LEN / 2, zB = LEN / 2, P = [];
+  P.push([cx + RW * Math.cos(th1), RW * Math.sin(th1), zA]);
+  P.push([cx + RW * Math.cos(th1), RW * Math.sin(th1), zB]);
+  for (let i = 1; i <= NARC; i++) {
+    const s = i / NARC, th = th1 + (th2 - th1) * s;
+    P.push([cx + RW * Math.cos(th), RW * Math.sin(th), zB + HEND * Math.sin(Math.PI * s)]);
+  }
+  P.push([cx + RW * Math.cos(th2), RW * Math.sin(th2), zA]);
+  for (let i = 1; i <= NARC; i++) {
+    const s = i / NARC, th = th2 + (th1 - th2) * s;
+    P.push([cx + RW * Math.cos(th), RW * Math.sin(th), zA - HEND * Math.sin(Math.PI * s)]);
+  }
+  return P;
+}
+
+// Machine list for the current mode. (sc, ss) scale the cos/sin current weights:
+//   parallel (1,1)   anti-phase (-1,-1)   reversed sequence (1,-1)
+function machineList(mode) {
+  if (mode === 'single') return [{ cx: 0, sc: 1, ss: 1 }];
+  const w = { parallel: [1, 1], antiphase: [-1, -1], negseq: [1, -1] }[mode];
+  return [{ cx: -D_SEP / 2, sc: 1, ss: 1 }, { cx: D_SEP / 2, sc: w[0], ss: w[1] }];
+}
+
+function buildCoils(mode) {
+  const coils = [];
+  for (const M of machineList(mode))
+    for (let k = 0; k < 3; k++) {
+      const phi = k * TAU / 3;
+      const wc = Math.cos(k * TAU / 3) * M.sc, ws = Math.sin(k * TAU / 3) * M.ss;
+      for (const g of GAMMAS) coils.push({ pts: coilPath(phi, g, M.cx), k, wc, ws, cx: M.cx, sc: M.sc, ss: M.ss });
+    }
+  return coils;
+}
+
+function packSegments(coils) {
+  const n = coils.reduce((a, c) => a + c.pts.length, 0);
+  const A = new Float32Array(n * 8);
+  let o = 0;
+  for (const c of coils)
+    for (let i = 0; i < c.pts.length; i++) {
+      const a = c.pts[i], b = c.pts[(i + 1) % c.pts.length];
+      A[o] = a[0]; A[o+1] = a[1]; A[o+2] = a[2];
+      A[o+3] = b[0]; A[o+4] = b[1]; A[o+5] = b[2];
+      A[o+6] = c.wc; A[o+7] = c.ws; o += 8;
+    }
+  return A;
+}
+
+/* ───────────────────────────────────────── exact finite-segment kernels
+   Verified against the infinite-wire limit, div B = 0, curl B = 0 in the
+   air gap, curl E = -dB/dt, and the point-dipole far field.               */
+const _o6 = new Float64Array(6);
+function fieldB(px, py, pz, SEG) {
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0;
+  for (let s = 0; s < SEG.length; s += 8) {
+    const ax = SEG[s]-px, ay = SEG[s+1]-py, az = SEG[s+2]-pz;
+    const bx = SEG[s+3]-px, by = SEG[s+4]-py, bz = SEG[s+5]-pz;
+    const na = Math.sqrt(ax*ax+ay*ay+az*az), nb = Math.sqrt(bx*bx+by*by+bz*bz);
+    const nn = na*nb, den = nn * (nn + ax*bx+ay*by+az*bz);
+    if (!(den > 1e-12)) continue;
+    const f = (na+nb)/den;
+    const cx = ay*bz-az*by, cy = az*bx-ax*bz, cz = ax*by-ay*bx;
+    const wc = SEG[s+6], ws = SEG[s+7];
+    b0 += wc*f*cx; b1 += wc*f*cy; b2 += wc*f*cz;
+    b3 += ws*f*cx; b4 += ws*f*cy; b5 += ws*f*cz;
+  }
+  _o6[0]=b0;_o6[1]=b1;_o6[2]=b2;_o6[3]=b3;_o6[4]=b4;_o6[5]=b5;
+  return _o6;
+}
+function fieldA(px, py, pz, SEG) {
+  let a0=0,a1=0,a2=0,a3=0,a4=0,a5=0;
+  for (let s = 0; s < SEG.length; s += 8) {
+    const ax = SEG[s]-px, ay = SEG[s+1]-py, az = SEG[s+2]-pz;
+    const bx = SEG[s+3]-px, by = SEG[s+4]-py, bz = SEG[s+5]-pz;
+    let lx = bx-ax, ly = by-ay, lz = bz-az;
+    const Lm = Math.sqrt(lx*lx+ly*ly+lz*lz);
+    if (!(Lm > 1e-10)) continue;
+    lx/=Lm; ly/=Lm; lz/=Lm;
+    const na = Math.sqrt(ax*ax+ay*ay+az*az), nb = Math.sqrt(bx*bx+by*by+bz*bz);
+    const t = Math.log((nb + bx*lx+by*ly+bz*lz + 1e-12) / (na + ax*lx+ay*ly+az*lz + 1e-12));
+    const wc = SEG[s+6], ws = SEG[s+7];
+    a0 += wc*lx*t; a1 += wc*ly*t; a2 += wc*lz*t;
+    a3 += ws*lx*t; a4 += ws*ly*t; a5 += ws*lz*t;
+  }
+  _o6[0]=a0;_o6[1]=a1;_o6[2]=a2;_o6[3]=a3;_o6[4]=a4;_o6[5]=a5;
+  return _o6;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scene
+   ═══════════════════════════════════════════════════════════════════════════ */
+const cv = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x080b0f, 1);
+renderer.localClippingEnabled = true;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x080b0f, 0.030);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 900);
+
+scene.add(new THREE.AmbientLight(0x35505f, 0.9));
+const key = new THREE.DirectionalLight(0xbfd8e6, 0.95); key.position.set(4, 6, 7); scene.add(key);
+const rim = new THREE.DirectionalLight(0x33cfc0, 0.5); rim.position.set(-6, -3, -4); scene.add(rim);
+
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0.02);
+
+// ── camera rig (hand-rolled orbit) ──────────────────────────────────────────
+const cam = { tgt: new THREE.Vector3(0, 0, 0), r: 12.5, th: 0.72, ph: 1.14 };
+function applyCam() {
+  const sp = Math.sin(cam.ph), cp = Math.cos(cam.ph);
+  camera.position.set(
+    cam.tgt.x + cam.r * sp * Math.cos(cam.th),
+    cam.tgt.y + cam.r * sp * Math.sin(cam.th),
+    cam.tgt.z + cam.r * cp);
+  camera.up.set(0, 0, 1);
+  camera.lookAt(cam.tgt);
+}
+(function orbit() {
+  let drag = null, px = 0, py = 0;
+  const pt = e => e.touches ? e.touches[0] : e;
+  cv.addEventListener('pointerdown', e => {
+    drag = (e.shiftKey || e.button === 2) ? 'pan' : 'rot';
+    px = e.clientX; py = e.clientY; cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY;
+    if (drag === 'rot') {
+      cam.th -= dx * 0.006;
+      cam.ph = Math.max(0.05, Math.min(Math.PI - 0.05, cam.ph - dy * 0.006));
+    } else {
+      const rt = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+      const up = camera.up.clone().normalize();
+      cam.tgt.addScaledVector(rt, -dx * cam.r * 0.0016).addScaledVector(up, dy * cam.r * 0.0016);
+    }
+    applyCam();
+  });
+  const stop = e => { drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
+  cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.r = Math.max(2.2, Math.min(140, cam.r * Math.exp(e.deltaY * 0.0011)));
+    applyCam();
+  }, { passive: false });
+  // pinch
+  let pd = 0;
+  cv.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pd) { cam.r = Math.max(2.2, Math.min(140, cam.r * pd / d)); applyCam(); }
+    pd = d;
+  }, { passive: true });
+  cv.addEventListener('touchend', () => pd = 0);
+})();
+
+/* ─────────────────────────────────────────────────────────── static meshes */
+const gMachines = new THREE.Group(); scene.add(gMachines);
+const coilMats = [];      // {mat, k, sc, ss}
+const wallMeshes = [];    // bore-wall E_z maps
+
+function ring(ri, ro, z, mat) {
+  const g = new THREE.RingGeometry(ri, ro, 96, 1);
+  const m = new THREE.Mesh(g, mat); m.position.z = z; return m;
+}
+function tube(r, h, mat, open) {
+  const g = new THREE.CylinderGeometry(r, r, h, 96, 1, open !== false);
+  const m = new THREE.Mesh(g, mat); m.rotation.x = Math.PI / 2; return m;
+}
+
+function buildMeshes(coils) {
+  gMachines.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  while (gMachines.children.length) gMachines.remove(gMachines.children[0]);
+  coilMats.length = 0; wallMeshes.length = 0;
+
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x35434f, metalness: 0.55, roughness: 0.62, transparent: true, opacity: 0.2,
+    side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [clipPlane]
+  });
+  const rotMat = new THREE.MeshStandardMaterial({
+    color: 0x2b3742, metalness: 0.7, roughness: 0.42, transparent: true, opacity: 0.35,
+    side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [clipPlane]
+  });
+
+  for (const M of machineList(S.mode)) {
+    const iron = new THREE.Group(); iron.position.x = M.cx; iron.userData.kind = 'iron';
+    iron.add(tube(R_IN, LEN, ironMat), tube(R_OUT, LEN, ironMat));
+    iron.add(ring(R_IN, R_OUT, LEN / 2, ironMat), ring(R_IN, R_OUT, -LEN / 2, ironMat));
+    gMachines.add(iron);
+
+    const rot = new THREE.Group(); rot.position.x = M.cx; rot.userData.kind = 'rotor';
+    rot.add(tube(R_ROT, LEN * 1.04, rotMat), ring(0, R_ROT, LEN * 0.52, rotMat), ring(0, R_ROT, -LEN * 0.52, rotMat));
+    rot.add(tube(R_SH, LEN * 1.9, rotMat, false));
+    gMachines.add(rot);
+
+    // bore wall, vertex-coloured with E_z
+    const wg = new THREE.CylinderGeometry(R_BORE * 0.995, R_BORE * 0.995, LEN, 72, 14, true);
+    const wm = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
+      vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.85
+    }));
+    wm.rotation.x = Math.PI / 2; wm.position.x = M.cx;
+    const nv = wg.attributes.position.count;
+    wg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nv * 3), 3));
+    wm.userData.kind = 'wall'; wm.userData.cx = M.cx;
+    gMachines.add(wm); wallMeshes.push(wm);
+  }
+
+  for (const c of coils) {
+    const pts = c.pts.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.15);
+    const g = new THREE.TubeGeometry(curve, 190, 0.036, 7, true);
+    const base = new THREE.Color(PHASE_HEX[c.k]);
+    const mat = new THREE.MeshStandardMaterial({
+      color: base.clone().multiplyScalar(0.24), emissive: base, emissiveIntensity: 0.3,
+      metalness: 0.35, roughness: 0.45
+    });
+    const mesh = new THREE.Mesh(g, mat); mesh.userData.kind = 'coil';
+    gMachines.add(mesh); coilMats.push({ mat, k: c.k, sc: c.sc, ss: c.ss });
+  }
+
+  // moment arrows
+  for (const M of machineList(S.mode)) {
+    const grp = new THREE.Group(); grp.position.x = M.cx; grp.userData.kind = 'm'; grp.userData.M = M;
+    const mm = new THREE.MeshBasicMaterial({ color: 0xeef4f8 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.5, 12), mm);
+    shaft.position.y = 0.75;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.28, 16), mm);
+    head.position.y = 1.62;
+    const inner = new THREE.Group(); inner.add(shaft, head);
+    grp.add(inner); grp.userData.inner = inner;
+    gMachines.add(grp);
+  }
+}
+
+/* ─────────────────────────────────────────────────── flux lines + tracers */
+const MAXPT = 46 * 1150;
+const lineGeo = new THREE.BufferGeometry();
+lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXPT * 2 * 3), 3));
+lineGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAXPT * 2 * 3), 3));
+const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending,
+  depthWrite: false, fog: false
+}));
+lines.frustumCulled = false; scene.add(lines);
+
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
+partGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
+const parts = new THREE.Points(partGeo, new THREE.PointsMaterial({
+  size: 0.075, vertexColors: true, transparent: true, opacity: 0.95,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false
+}));
+parts.frustumCulled = false; scene.add(parts);
+
+const eGeo = new THREE.BufferGeometry();
+eGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 6 * 3), 3));
+eGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(400 * 6 * 3), 3));
+const eArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+  depthWrite: false, fog: false
+}));
+eArrows.frustumCulled = false; scene.add(eArrows);
+
+function ramp(u) {
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  for (let i = 0; i < FLUX_RAMP.length - 1; i++) {
+    const a = FLUX_RAMP[i], b = FLUX_RAMP[i + 1];
+    if (u <= b[0]) {
+      const f = (u - a[0]) / (b[0] - a[0] || 1);
+      return [(a[1] + (b[1] - a[1]) * f) / 255, (a[2] + (b[2] - a[2]) * f) / 255, (a[3] + (b[3] - a[3]) * f) / 255];
+    }
+  }
+  const z = FLUX_RAMP[FLUX_RAMP.length - 1];
+  return [z[1] / 255, z[2] / 255, z[3] / 255];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Precomputation.  B(r,t) = cos(wt)*Bc(r) + sin(wt)*Bs(r) on a grid;
+   A sampled directly at the E probe points.  E = -dA/dt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let SEG = null, G = null, GC = null, GRIDS = null, CXS = [0], MOM = [], EP = null, Bref = 1, Eref = 1;
+let CB = 1, SB = 0;   // blend coefficients, shared with the far field
+let nClosed = 0;
+
+// Fine grid resolves the bore and end region; coarse grid carries the return
+// path out far enough for every seeded line to close on itself.
+function makeGrids(mode) {
+  return mode === 'single'
+    ? [{ nx: 44, ny: 44, nz: 44, x0: -3.3, x1: 3.3, y0: -3.3, y1: 3.3, z0: -3.3, z1: 3.3 },
+       { nx: 36, ny: 36, nz: 36, x0: -8.0, x1: 8.0, y0: -8.0, y1: 8.0, z0: -8.0, z1: 8.0 }]
+    : [{ nx: 62, ny: 34, nz: 34, x0: -5.9, x1: 5.9, y0: -3.0, y1: 3.0, z0: -3.0, z1: 3.0 },
+       { nx: 42, ny: 32, nz: 32, x0: -10.5, x1: 10.5, y0: -8.0, y1: 8.0, z0: -8.0, z1: 8.0 }];
+}
+
+function eProbes(mode) {
+  const P = [];
+  for (const M of machineList(mode)) {
+    for (let i = 0; i < 22; i++) {
+      const th = i * TAU / 22;
+      for (const z of [-0.94, -0.47, 0, 0.47, 0.94])
+        P.push([M.cx + 0.97 * Math.cos(th), 0.97 * Math.sin(th), z]);
+    }
+    for (let i = 0; i < 12; i++) {
+      const th = i * TAU / 12;
+      for (const r of [0.36, 0.68]) P.push([M.cx + r * Math.cos(th), r * Math.sin(th), 0]);
+    }
+  }
+  return P;
+}
+
+const sleep = () => new Promise(r => setTimeout(r, 0));
+
+async function precompute(onProgress) {
+  const coils = buildCoils(S.mode);
+  SEG = packSegments(coils);
+  buildMeshes(coils);
+
+  CXS = machineList(S.mode).map(m => m.cx);
+  MOM = machineList(S.mode).map(M => {
+    const s1 = packSegments(coils.filter(c => c.cx === M.cx));
+    const mc = [0, 0, 0], msn = [0, 0, 0];
+    for (let i = 0; i < s1.length; i += 8) {
+      const rx = 0.5*(s1[i]+s1[i+3]) - M.cx, ry = 0.5*(s1[i+1]+s1[i+4]), rz = 0.5*(s1[i+2]+s1[i+5]);
+      const dx = s1[i+3]-s1[i], dy = s1[i+4]-s1[i+1], dz = s1[i+5]-s1[i+2];
+      const cx = ry*dz-rz*dy, cy = rz*dx-rx*dz, cz = rx*dy-ry*dx;
+      mc[0]+=0.5*s1[i+6]*cx; mc[1]+=0.5*s1[i+6]*cy; mc[2]+=0.5*s1[i+6]*cz;
+      msn[0]+=0.5*s1[i+7]*cx; msn[1]+=0.5*s1[i+7]*cy; msn[2]+=0.5*s1[i+7]*cz;
+    }
+    return { cx: M.cx, mc, ms: msn };
+  });
+  const gs = makeGrids(S.mode);
+  const total = gs.reduce((a, g) => a + g.nx * g.ny * g.nz, 0);
+  let done = 0;
+  for (const g of gs) {
+    g.dx = (g.x1 - g.x0) / (g.nx - 1); g.dy = (g.y1 - g.y0) / (g.ny - 1); g.dz = (g.z1 - g.z0) / (g.nz - 1);
+    const N = g.nx * g.ny * g.nz;
+    g.Bc = new Float32Array(N * 3); g.Bs = new Float32Array(N * 3); g.B = new Float32Array(N * 3);
+    for (let iz = 0; iz < g.nz; iz++) {
+      const z = g.z0 + iz * g.dz;
+      for (let iy = 0; iy < g.ny; iy++) {
+        const y = g.y0 + iy * g.dy;
+        let o = ((iz * g.ny + iy) * g.nx) * 3;
+        for (let ix = 0; ix < g.nx; ix++, o += 3) {
+          const F = fieldB(g.x0 + ix * g.dx, y, z, SEG);
+          g.Bc[o] = F[0]; g.Bc[o+1] = F[1]; g.Bc[o+2] = F[2];
+          g.Bs[o] = F[3]; g.Bs[o+1] = F[4]; g.Bs[o+2] = F[5];
+        }
+      }
+      done += g.nx * g.ny;
+      if (iz % 2 === 0) { onProgress(0.05 + 0.85 * done / total); await sleep(); }
+    }
+  }
+  GRIDS = gs; G = gs[0]; GC = gs[1];
+
+  // A at probes (exact, no interpolation)
+  const pts = eProbes(S.mode);
+  EP = { p: new Float32Array(pts.length * 3), ac: new Float32Array(pts.length * 3), as: new Float32Array(pts.length * 3), n: pts.length };
+  for (let i = 0; i < pts.length; i++) {
+    const F = fieldA(pts[i][0], pts[i][1], pts[i][2], SEG);
+    EP.p[i*3] = pts[i][0]; EP.p[i*3+1] = pts[i][1]; EP.p[i*3+2] = pts[i][2];
+    EP.ac[i*3] = F[0]; EP.ac[i*3+1] = F[1]; EP.ac[i*3+2] = F[2];
+    EP.as[i*3] = F[3]; EP.as[i*3+1] = F[4]; EP.as[i*3+2] = F[5];
+  }
+  onProgress(0.94); await sleep();
+
+  // A on the bore walls
+  for (const wm of wallMeshes) {
+    const pos = wm.geometry.attributes.position, n = pos.count;
+    const ac = new Float32Array(n), as = new Float32Array(n);   // axial component only
+    for (let i = 0; i < n; i++) {
+      // cylinder is built along Y then rotated; map back to world
+      const F = fieldA(wm.userData.cx + pos.getX(i), -pos.getZ(i), pos.getY(i), SEG);
+      ac[i] = F[2]; as[i] = F[5];
+    }
+    wm.userData.ac = ac; wm.userData.as = as;
+  }
+
+  // reference magnitudes
+  const c0 = machineList(S.mode)[0].cx;
+  const F0 = fieldB(c0, 0, 0, SEG); Bref = Math.hypot(F0[0], F0[1], F0[2]) || 1;
+  let em = 0;
+  for (let i = 0; i < EP.n; i++) em = Math.max(em, Math.hypot(EP.ac[i*3], EP.ac[i*3+1], EP.ac[i*3+2]));
+  Eref = em || 1;
+  onProgress(1);
+}
+
+/* ─────────────────────────────────────────── trilinear sample of blended B */
+function blend(c, s) {
+  CB = c; SB = s;
+  for (const g of GRIDS) {
+    const Bc = g.Bc, Bs = g.Bs, B = g.B;
+    for (let i = 0; i < B.length; i++) B[i] = c * Bc[i] + s * Bs[i];
+  }
+}
+function sampleOne(G, x, y, z, out) {
+  const fx = (x - G.x0) / G.dx, fy = (y - G.y0) / G.dy, fz = (z - G.z0) / G.dz;
+  if (fx < 0 || fy < 0 || fz < 0 || fx > G.nx - 1.001 || fy > G.ny - 1.001 || fz > G.nz - 1.001) return false;
+  const ix = fx | 0, iy = fy | 0, iz = fz | 0;
+  const tx = fx - ix, ty = fy - iy, tz = fz - iz;
+  const B = G.B, sy = G.nx, sz = G.nx * G.ny;
+  const base = (iz * sz + iy * sy + ix) * 3;
+  const o = [base, base+3, base+sy*3, base+sy*3+3, base+sz*3, base+sz*3+3, base+(sz+sy)*3, base+(sz+sy)*3+3];
+  const w = [(1-tx)*(1-ty)*(1-tz), tx*(1-ty)*(1-tz), (1-tx)*ty*(1-tz), tx*ty*(1-tz),
+             (1-tx)*(1-ty)*tz, tx*(1-ty)*tz, (1-tx)*ty*tz, tx*ty*tz];
+  let a=0,b=0,c=0;
+  for (let i = 0; i < 8; i++) { a += w[i]*B[o[i]]; b += w[i]*B[o[i]+1]; c += w[i]*B[o[i]+2]; }
+  out[0]=a; out[1]=b; out[2]=c; return true;
+}
+// Beyond the grids, superposed point dipoles with the moments the winding
+// actually has. Verified against the full integral: 2% error at r = 8, 1% at 16.
+function sampleFar(x, y, z, out) {
+  let ax = 0, ay = 0, az = 0;
+  for (const M of MOM) {
+    const mx = CB*M.mc[0] + SB*M.ms[0], my = CB*M.mc[1] + SB*M.ms[1], mz = CB*M.mc[2] + SB*M.ms[2];
+    const px = x - M.cx, r2 = px*px + y*y + z*z;
+    if (r2 < 1e-9) continue;
+    const r = Math.sqrt(r2), d = (mx*px + my*y + mz*z) / r2, r3 = r2 * r;
+    ax += (3*d*px - mx)/r3; ay += (3*d*y - my)/r3; az += (3*d*z - mz)/r3;
+  }
+  out[0]=ax; out[1]=ay; out[2]=az;
+  return (ax*ax + ay*ay + az*az) > 1e-24;
+}
+function sampleB(x, y, z, out) {
+  if (sampleOne(G, x, y, z, out)) return true;
+  if (sampleOne(GC, x, y, z, out)) return true;
+  return sampleFar(x, y, z, out);
+}
+// Step grows with distance from the nearest machine: the far field varies on a
+// scale of order r, so a fixed step wastes thousands of points out there.
+function stepAt(x, y, z) {
+  let d2 = Infinity;
+  for (let i = 0; i < CXS.length; i++) {
+    const dx = x - CXS[i], v = dx*dx + y*y + z*z;
+    if (v < d2) d2 = v;
+  }
+  return Math.min(3.0, 0.05 * Math.max(1, Math.sqrt(d2) / 1.5));
+}
+// Display-only radial squash. With no yoke the return flux closes at r ~ 15 to
+// 40, which would leave the machine a speck. Topology and closure are computed
+// in true space; only the drawn radius is compressed.
+const _sq = [0, 0, 0];
+function squash(x, y, z) {
+  if (!S.squash) { _sq[0]=x; _sq[1]=y; _sq[2]=z; return _sq; }
+  const r = Math.hypot(x, y, z), r0 = S.mode === 'single' ? 3.5 : 6.0, k = 2.2;
+  if (r <= r0 || r < 1e-9) { _sq[0]=x; _sq[1]=y; _sq[2]=z; return _sq; }
+  const f = (r0 + k * Math.log(1 + (r - r0) / k)) / r;
+  _sq[0]=x*f; _sq[1]=y*f; _sq[2]=z*f; return _sq;
+}
+
+// Seeds sit on the disc through the machine centre normal to m. A tube seeded
+// at fraction u of the bore carries flux ~u^2 and returns at radius ~2m/(B0 u^2),
+// so seeding near the axis costs an arc that runs off to infinity. The rings
+// start at u = 0.62, which closes by r ~ 14.
+function seeds(t) {
+  const out = [];
+  const perM = Math.max(8, Math.round(S.nSeed / machineList(S.mode).length));
+  const rings = [[0.62, 0.24], [0.78, 0.34], [0.93, 0.42]];
+  for (const M of machineList(S.mode)) {
+    // machine B's pattern leads, lags or counter-rotates per its (sc, ss) weights
+    const tb = (M.ss < 0) ? (M.sc < 0 ? t + Math.PI : -t) : (M.sc < 0 ? t + Math.PI : t);
+    const bvx = -Math.sin(tb), bvy = Math.cos(tb);
+    for (const [u, frac] of rings) {
+      const k = Math.max(3, Math.round(perM * frac));
+      for (let i = 0; i < k; i++) {
+        const a = (i + 0.5) * TAU / k, cu = u * 0.92 * Math.cos(a);
+        out.push([M.cx + cu * bvx, cu * bvy, u * 1.05 * Math.sin(a)]);
+      }
+    }
+  }
+  return out;
+}
+
+const traced = [];
+const _k1 = [0,0,0], _k2 = [0,0,0];
+
+// RK2 walk along B. Returns true if the line came back to its seed, i.e. the
+// loop actually closed rather than running out of computed volume.
+function walk(sx, sy, sz, sgn, NS, path) {
+  let x = sx, y = sy, z = sz, maxr = 0;
+  if (!sampleB(sx, sy, sz, _k1)) return false;
+  const m0 = Math.hypot(_k1[0], _k1[1], _k1[2]);
+  if (!(m0 > 1e-12)) return false;
+  const d0x = _k1[0]/m0, d0y = _k1[1]/m0, d0z = _k1[2]/m0, h0 = stepAt(sx, sy, sz);
+  for (let n = 0; n < NS; n++) {
+    if (!sampleB(x, y, z, _k1)) return false;
+    const m1 = Math.hypot(_k1[0], _k1[1], _k1[2]);
+    if (!(m1 > 1e-12)) return false;
+    path.push(x, y, z, m1);
+    const h = sgn * stepAt(x, y, z);
+    const hx = x + 0.5*h*_k1[0]/m1, hy = y + 0.5*h*_k1[1]/m1, hz = z + 0.5*h*_k1[2]/m1;
+    if (!sampleB(hx, hy, hz, _k2)) return false;
+    const m2 = Math.hypot(_k2[0], _k2[1], _k2[2]);
+    if (!(m2 > 1e-12)) return false;
+    x += h*_k2[0]/m2; y += h*_k2[1]/m2; z += h*_k2[2]/m2;
+    const rr = Math.hypot(x, y, z);
+    if (rr > maxr) maxr = rr;
+    if (rr > 200) return false;
+    if (n > 60) {
+      // grid interpolation drifts the return point by ~1% of path length, so
+      // scale the tolerance to the loop and require the direction to agree
+      const d = Math.hypot(x - sx, y - sy, z - sz);
+      const align = sgn * (_k2[0]*d0x + _k2[1]*d0y + _k2[2]*d0z) / m2;
+      if (d < Math.max(4 * h0, 0.035 * maxr) && align > 0.6) {
+        path.push(x, y, z, m2); return true;    // closed
+      }
+    }
+  }
+  return false;
+}
+
+function traceLines(t) {
+  traced.length = 0; nClosed = 0;
+  const NS = 460;
+  const pos = lineGeo.attributes.position.array, col = lineGeo.attributes.color.array;
+  let vi = 0;
+  for (const sd of seeds(t)) {
+    const fwd = [];
+    let path = fwd;
+    if (walk(sd[0], sd[1], sd[2], +1, NS, fwd)) nClosed++;
+    else {
+      const bwd = [];
+      walk(sd[0], sd[1], sd[2], -1, NS, bwd);
+      path = [];
+      for (let i = bwd.length / 4 - 1; i >= 1; i--) path.push(bwd[i*4], bwd[i*4+1], bwd[i*4+2], bwd[i*4+3]);
+      for (let i = 0; i < fwd.length; i++) path.push(fwd[i]);
+    }
+    if (path.length < 12) continue;
+    traced.push(path);
+    const np = path.length / 4;
+    for (let i = 0; i < np - 1 && vi < MAXPT * 2 - 2; i++) {
+      for (const j of [i, i + 1]) {
+        const q = squash(path[j*4], path[j*4+1], path[j*4+2]);
+        pos[vi*3] = q[0]; pos[vi*3+1] = q[1]; pos[vi*3+2] = q[2];
+        const rgb = ramp(0.5 + 0.30 * Math.log10(path[j*4+3] / Bref + 1e-9));
+        col[vi*3] = rgb[0]; col[vi*3+1] = rgb[1]; col[vi*3+2] = rgb[2];
+        vi++;
+      }
+    }
+  }
+  lineGeo.setDrawRange(0, vi);
+  lineGeo.attributes.position.needsUpdate = true;
+  lineGeo.attributes.color.needsUpdate = true;
+}
+
+function updateParticles(phase) {
+  const pos = partGeo.attributes.position.array, col = partGeo.attributes.color.array;
+  let n = 0, cap = pos.length / 3;
+  for (const path of traced) {
+    const np = path.length / 4, per = 6;
+    for (let i = 0; i < per && n < cap; i++) {
+      const u = ((i / per) + phase) % 1;
+      const j = Math.min(np - 1, Math.floor(u * np));
+      const q = squash(path[j*4], path[j*4+1], path[j*4+2]);
+      pos[n*3] = q[0]; pos[n*3+1] = q[1]; pos[n*3+2] = q[2];
+      col[n*3] = 0.92; col[n*3+1] = 1.0; col[n*3+2] = 0.98;
+      n++;
+    }
+  }
+  partGeo.setDrawRange(0, n);
+  partGeo.attributes.position.needsUpdate = true;
+  partGeo.attributes.color.needsUpdate = true;
+}
+
+function updateE(c, s) {
+  // E = -dA/dt = omega * (sin(wt) Ac - cos(wt) As)
+  const pos = eGeo.attributes.position.array, col = eGeo.attributes.color.array;
+  const scale = 0.75 / Eref;
+  let vi = 0, peak = 0;
+  const up = new THREE.Vector3(), d = new THREE.Vector3(), u = new THREE.Vector3(),
+        tip = new THREE.Vector3(), o = new THREE.Vector3(), back = new THREE.Vector3(), h = new THREE.Vector3();
+  for (let i = 0; i < EP.n; i++) {
+    const ex = s * EP.ac[i*3] - c * EP.as[i*3];
+    const ey = s * EP.ac[i*3+1] - c * EP.as[i*3+1];
+    const ez = s * EP.ac[i*3+2] - c * EP.as[i*3+2];
+    const mag = Math.hypot(ex, ey, ez); peak = Math.max(peak, mag);
+    if (mag < 1e-6) continue;
+    const L = mag * scale;
+    o.set(EP.p[i*3], EP.p[i*3+1], EP.p[i*3+2]);
+    d.set(ex / mag, ey / mag, ez / mag);
+    tip.copy(o).addScaledVector(d, L);
+    up.set(Math.abs(d.z) < 0.9 ? 0 : 1, 0, Math.abs(d.z) < 0.9 ? 1 : 0);
+    u.crossVectors(d, up).normalize();
+    const w = ez >= 0 ? [1.0, 0.57, 0.32] : [0.61, 0.48, 1.0];
+    const b = Math.min(1, 0.24 + 0.9 * mag / Eref);
+    const put = (v, f) => {
+      pos[vi*3] = v.x; pos[vi*3+1] = v.y; pos[vi*3+2] = v.z;
+      col[vi*3] = w[0]*f; col[vi*3+1] = w[1]*f; col[vi*3+2] = w[2]*f; vi++;
+    };
+    put(o, b * 0.22); put(tip, b);
+    back.copy(tip).addScaledVector(d, -0.3 * L);
+    put(tip, b); put(h.copy(back).addScaledVector(u,  0.14 * L), b);
+    put(tip, b); put(h.copy(back).addScaledVector(u, -0.14 * L), b);
+  }
+  eGeo.setDrawRange(0, vi);
+  eGeo.attributes.position.needsUpdate = true;
+  eGeo.attributes.color.needsUpdate = true;
+  return peak;
+}
+
+function updateWalls(c, s) {
+  for (const wm of wallMeshes) {
+    const col = wm.geometry.attributes.color, ac = wm.userData.ac, as = wm.userData.as;
+    if (!ac) continue;
+    for (let i = 0; i < col.count; i++) {
+      const e = (s * ac[i] - c * as[i]) / Eref;
+      const t = Math.max(-1, Math.min(1, e * 1.15));
+      if (t >= 0) col.setXYZ(i, 0.06 + 0.94*t, 0.05 + 0.51*t, 0.07 + 0.25*t);
+      else col.setXYZ(i, 0.06 + 0.55*(-t), 0.05 + 0.43*(-t), 0.09 + 0.91*(-t));
+    }
+    col.needsUpdate = true;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scopes
+   ═══════════════════════════════════════════════════════════════════════════ */
+const scI = document.getElementById('scI'), ctxI = scI.getContext('2d');
+const scU = document.getElementById('scU'), ctxU = scU.getContext('2d');
+const PH_CSS = ['#e8544b', '#f2c14e', '#4fa3e0'];
+
+function Ufn(mode, t) {
+  const mA = [Math.cos(t), Math.sin(t)];
+  const w = { parallel: [1, 1], antiphase: [-1, -1], negseq: [1, -1] }[mode];
+  if (!w) return null;
+  const mB = [w[0] * Math.cos(t), w[1] * Math.sin(t)];
+  const BA = [2 * mA[0], -mA[1]];                      // separation along +x, normalised by D^3
+  return { U: -(mB[0] * BA[0] + mB[1] * BA[1]), Tq: mB[0] * BA[1] - mB[1] * BA[0] };
+}
+
+function drawScopes(t) {
+  const W = scI.width, H = scI.height, m = 6;
+  ctxI.clearRect(0, 0, W, H);
+  ctxI.strokeStyle = '#1a242e'; ctxI.lineWidth = 1;
+  ctxI.beginPath(); ctxI.moveTo(0, H/2); ctxI.lineTo(W, H/2); ctxI.stroke();
+  for (let k = 0; k < 3; k++) {
+    ctxI.strokeStyle = PH_CSS[k]; ctxI.lineWidth = 1.4; ctxI.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const a = (x / W) * 2 * TAU;
+      const y = H/2 - Math.cos(a - k*TAU/3) * (H/2 - m);
+      x ? ctxI.lineTo(x, y) : ctxI.moveTo(x, y);
+    }
+    ctxI.stroke();
+  }
+  const cx = ((t % TAU) / (2 * TAU)) * W;
+  ctxI.strokeStyle = 'rgba(51,207,192,.85)'; ctxI.lineWidth = 1;
+  ctxI.beginPath(); ctxI.moveTo(cx, 0); ctxI.lineTo(cx, H); ctxI.stroke();
+  for (let k = 0; k < 3; k++) {
+    const y = H/2 - Math.cos(t - k*TAU/3) * (H/2 - m);
+    ctxI.fillStyle = PH_CSS[k]; ctxI.beginPath(); ctxI.arc(cx, y, 2.6, 0, TAU); ctxI.fill();
+  }
+
+  if (S.mode === 'single') return;
+  const W2 = scU.width, H2 = scU.height;
+  ctxU.clearRect(0, 0, W2, H2);
+  const y0 = H2 - 6, y2 = 6, map = v => y0 + (v + 2) / 4 * (y2 - y0);
+  ctxU.strokeStyle = '#1a242e'; ctxU.lineWidth = 1;
+  ctxU.beginPath(); ctxU.moveTo(0, map(0)); ctxU.lineTo(W2, map(0)); ctxU.stroke();
+  ctxU.strokeStyle = '#33cfc0'; ctxU.lineWidth = 1.5; ctxU.beginPath();
+  for (let x = 0; x <= W2; x++) {
+    const a = (x / W2) * 2 * TAU, y = map(Ufn(S.mode, a).U);
+    x ? ctxU.lineTo(x, y) : ctxU.moveTo(x, y);
+  }
+  ctxU.stroke();
+  const cu = ((t % TAU) / (2 * TAU)) * W2, yy = map(Ufn(S.mode, t).U);
+  ctxU.strokeStyle = 'rgba(51,207,192,.4)'; ctxU.beginPath(); ctxU.moveTo(cu, 0); ctxU.lineTo(cu, H2); ctxU.stroke();
+  ctxU.fillStyle = '#dcf3ff'; ctxU.beginPath(); ctxU.arc(cu, yy, 2.8, 0, TAU); ctxU.fill();
+  ctxU.fillStyle = '#4e5d69'; ctxU.font = '9px "IBM Plex Mono", monospace';
+  ctxU.fillText('+2', 3, y2 + 8); ctxU.fillText('−2', 3, y0 - 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Frame
+   ═══════════════════════════════════════════════════════════════════════════ */
+let last = performance.now(), advect = 0, ready = false;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!ready) return;
+  if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
+  advect = (advect + dt * 0.28) % 1;
+
+  const c = Math.cos(S.t), s = Math.sin(S.t);
+
+  // coils
+  for (const cm of coilMats) {
+    const i = c * Math.cos(cm.k*TAU/3) * cm.sc + s * Math.sin(cm.k*TAU/3) * cm.ss;
+    cm.mat.emissiveIntensity = 0.09 + 1.05 * Math.abs(i);
+    cm.mat.visible = S.showW;
+  }
+  for (const ch of gMachines.children) {
+    const k = ch.userData.kind;
+    if (k === 'iron') ch.visible = S.showI;
+    else if (k === 'rotor') ch.visible = S.showR;
+    else if (k === 'wall') ch.visible = S.showEz;
+    else if (k === 'm') {
+      ch.visible = S.showM;
+      const M = ch.userData.M;
+      const ang = Math.atan2(s * M.ss, c * M.sc);
+      ch.userData.inner.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0));
+    }
+  }
+  camera.getWorldDirection(clipPlane.normal).normalize();   // keep the far half
+  clipPlane.constant = S.cut ? 0.02 : 1e6;
+
+  lines.visible = S.showB; parts.visible = S.showB && S.showP; eArrows.visible = S.showE;
+
+  if (S.showB) { blend(c, s); traceLines(S.t); if (S.showP) updateParticles(advect); }
+  const epk = updateE(c, s);
+  if (S.showEz) updateWalls(c, s);
+
+  // readout
+  document.getElementById('rPh').textContent = 'ωt ' + (S.t * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('rIa').textContent = fmt(Math.cos(S.t));
+  document.getElementById('rIb').textContent = fmt(Math.cos(S.t - TAU/3));
+  document.getElementById('rIc').textContent = fmt(Math.cos(S.t - 2*TAU/3));
+  const cc = machineList(S.mode)[0].cx, Fc = fieldB(cc, 0, 0, SEG);
+  document.getElementById('rB').textContent =
+    (Math.hypot(c*Fc[0]+s*Fc[3], c*Fc[1]+s*Fc[4], c*Fc[2]+s*Fc[5]) / Bref).toFixed(4) + ' pu';
+  document.getElementById('rE').textContent = (epk / Eref).toFixed(3) + ' pu';
+  document.getElementById('rC').textContent = S.showB ? nClosed + ' / ' + traced.length : '—';
+  const uu = Ufn(S.mode, S.t);
+  if (uu) {
+    document.getElementById('rU').textContent = fmt(uu.U);
+    document.getElementById('rTq').textContent = fmt(uu.Tq);
+    document.getElementById('rUm').textContent = fmt({ parallel: -0.5, antiphase: 0.5, negseq: -1.5 }[S.mode]);
+  }
+  drawScopes(S.t);
+  renderer.render(scene, camera);
+}
+const fmt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(3);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+function bindBox(id, key) {
+  const el = document.getElementById(id);
+  el.checked = S[key];
+  el.addEventListener('change', () => S[key] = el.checked);
+}
+bindBox('cB','showB'); bindBox('cP','showP'); bindBox('cE','showE'); bindBox('cS','showEz');
+bindBox('cQ','squash'); bindBox('cW','showW'); bindBox('cI','showI'); bindBox('cR','showR'); bindBox('cM','showM'); bindBox('cC','cut');
+
+const sN = document.getElementById('sN'), vN = document.getElementById('vN');
+sN.addEventListener('input', () => { S.nSeed = +sN.value; vN.textContent = sN.value; });
+
+const sT = document.getElementById('sT'), vT = document.getElementById('vT');
+sT.addEventListener('input', () => { S.t = +sT.value * Math.PI / 180; vT.textContent = sT.value + '°'; });
+function syncPhaseUI() {
+  const d = S.t * 180 / Math.PI;
+  sT.value = d.toFixed(1); vT.textContent = d.toFixed(0) + '°';
+}
+
+const sS = document.getElementById('sS'), vS = document.getElementById('vS');
+sS.addEventListener('input', () => { S.speed = +sS.value / 100; vS.textContent = S.speed.toFixed(2) + '×'; });
+
+const bPlay = document.getElementById('bPlay');
+bPlay.textContent = S.playing ? 'Pause' : 'Run';
+bPlay.setAttribute('aria-pressed', String(S.playing));
+bPlay.addEventListener('click', () => {
+  S.playing = !S.playing;
+  bPlay.textContent = S.playing ? 'Pause' : 'Run';
+  bPlay.setAttribute('aria-pressed', String(S.playing));
+});
+
+let axial = false;
+document.getElementById('bView').addEventListener('click', e => {
+  axial = !axial;
+  if (axial) { cam.th = 0; cam.ph = 0.001; cam.r = 8.5; e.target.textContent = 'Three-quarter view'; }
+  else { cam.th = 0.72; cam.ph = 1.14; cam.r = S.mode === 'single' ? 12.5 : 17; e.target.textContent = 'Look down bore'; }
+  applyCam();
+});
+
+document.getElementById('modes').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const m = b.dataset.m; if (m === S.mode) return;
+  S.mode = m;
+  [...document.querySelectorAll('#modes button')].forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === m)));
+  document.getElementById('pair').style.display = m === 'single' ? 'none' : 'block';
+  document.getElementById('scopeU').style.display = m === 'single' ? 'none' : 'block';
+  axial = false;
+  document.getElementById('bView').textContent = 'Look down bore';
+  cam.th = 0.72; cam.ph = 1.14;
+  cam.r = m === 'single' ? 12.5 : 17; cam.tgt.set(0, 0, 0); applyCam();
+  await run();
+});
+
+document.getElementById('toggleRail').addEventListener('click', e => {
+  const r = document.getElementById('rail');
+  const hid = r.classList.toggle('hidden');
+  e.target.setAttribute('aria-expanded', String(!hid));
+});
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+  if (e.code === 'Space') { e.preventDefault(); bPlay.click(); }
+});
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ─────────────────────────────────────────────────────────────────── boot */
+const veil = document.getElementById('veil'), bar = document.querySelector('#bar i'), pct = document.getElementById('pct');
+async function run() {
+  ready = false;
+  veil.classList.remove('gone');
+  bar.style.width = '0%'; pct.textContent = '0%';
+  await sleep();
+  await precompute(p => { bar.style.width = (p * 100).toFixed(0) + '%'; pct.textContent = (p * 100).toFixed(0) + '%'; });
+  ready = true;
+  veil.classList.add('gone');
+}
+resize(); applyCam();
+requestAnimationFrame(frame);
+run();
+</script>
+</body>
+</html>
