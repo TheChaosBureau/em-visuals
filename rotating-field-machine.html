@@ -4,9 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Rotating field — 2-pole machine, E and B</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#080b0f; --panel:#0e141b; --panel-2:#131b24; --rule:#1e2a35;
@@ -18,7 +15,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
 body{
-  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   color:var(--ink); font-size:12px; -webkit-font-smoothing:antialiased;
 }
 #stage{position:fixed;inset:0}
@@ -33,7 +30,7 @@ canvas#gl{display:block;width:100%;height:100%}
 }
 #rail header{padding:16px 16px 12px;border-bottom:1px solid var(--rule);flex:none}
 #rail h1{
-  font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  font-family:system-ui,sans-serif;
   font-weight:700; font-size:16px; letter-spacing:.01em; line-height:1.15; color:#eef4f8;
 }
 #rail h1 em{font-style:normal;color:var(--accent)}
@@ -43,11 +40,11 @@ canvas#gl{display:block;width:100%;height:100%}
 #scroll::-webkit-scrollbar-thumb{background:#1c2731;border-radius:4px}
 section{padding:14px 16px;border-bottom:1px solid var(--rule)}
 .eyebrow{
-  font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:600;
+  font-family:system-ui,sans-serif;font-weight:600;
   font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
   margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline;
 }
-.eyebrow b{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink-dim);letter-spacing:0}
+.eyebrow b{font-family:ui-monospace,monospace;font-weight:500;color:var(--ink-dim);letter-spacing:0}
 
 /* toggles */
 .row{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;user-select:none}
@@ -110,11 +107,11 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
   padding:8px 10px 6px;backdrop-filter:blur(9px);
 }
 .scope .cap{
-  font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:600;font-size:9.5px;
+  font-family:system-ui,sans-serif;font-weight:600;font-size:9.5px;
   letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
   display:flex;justify-content:space-between;gap:14px;margin-bottom:5px;
 }
-.scope .cap span{letter-spacing:0;font-family:"IBM Plex Mono",monospace;font-weight:500}
+.scope .cap span{letter-spacing:0;font-family:ui-monospace,monospace;font-weight:500}
 .scope canvas{display:block}
 
 /* --------------------------------------------------------------- overlays */
@@ -128,7 +125,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
   transition:opacity .35s;
 }
 #veil.gone{opacity:0;pointer-events:none}
-#veil .t{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:13px;letter-spacing:.06em;color:var(--ink-dim)}
+#veil .t{font-family:system-ui,sans-serif;font-size:13px;letter-spacing:.06em;color:var(--ink-dim)}
 #bar{width:230px;height:2px;background:#1c2731;border-radius:2px;overflow:hidden}
 #bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
 #veil .pct{font-size:10.5px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
@@ -250,8 +247,11 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
   <div class="pct" id="pct">0%</div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from './vendor/VRButton.js';
+import { applyDeadzone, nextScale, pressedEdge } from './xr-controls.js';
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════════════
    Geometry and physics constants.  Units: R_bore = 1, mu0*I*N/(4*pi) = 1.
@@ -374,6 +374,9 @@ const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: f
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setClearColor(0x080b0f, 1);
 renderer.localClippingEnabled = true;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+renderer.xr.setFramebufferScaleFactor(0.8);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x080b0f, 0.030);
@@ -382,6 +385,11 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 900);
 scene.add(new THREE.AmbientLight(0x35505f, 0.9));
 const key = new THREE.DirectionalLight(0xbfd8e6, 0.95); key.position.set(4, 6, 7); scene.add(key);
 const rim = new THREE.DirectionalLight(0x33cfc0, 0.5); rim.position.set(-6, -3, -4); scene.add(rim);
+
+// Desktop uses the model's native Z-up coordinates. WebXR supplies a Y-up
+// tracking space, so immersive placement and orientation live in separate roots.
+const xrPlacement = new THREE.Group(); scene.add(xrPlacement);
+const modelRoot = new THREE.Group(); xrPlacement.add(modelRoot);
 
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0.02);
 
@@ -436,7 +444,7 @@ function applyCam() {
 })();
 
 /* ─────────────────────────────────────────────────────────── static meshes */
-const gMachines = new THREE.Group(); scene.add(gMachines);
+const gMachines = new THREE.Group(); modelRoot.add(gMachines);
 const coilMats = [];      // {mat, k, sc, ss}
 const wallMeshes = [];    // bore-wall E_z maps
 
@@ -525,7 +533,7 @@ const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
   vertexColors: true, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending,
   depthWrite: false, fog: false
 }));
-lines.frustumCulled = false; scene.add(lines);
+lines.frustumCulled = false; modelRoot.add(lines);
 
 const partGeo = new THREE.BufferGeometry();
 partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
@@ -534,7 +542,7 @@ const parts = new THREE.Points(partGeo, new THREE.PointsMaterial({
   size: 0.075, vertexColors: true, transparent: true, opacity: 0.95,
   blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false
 }));
-parts.frustumCulled = false; scene.add(parts);
+parts.frustumCulled = false; modelRoot.add(parts);
 
 const eGeo = new THREE.BufferGeometry();
 eGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 6 * 3), 3));
@@ -543,7 +551,7 @@ const eArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
   vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
   depthWrite: false, fog: false
 }));
-eArrows.frustumCulled = false; scene.add(eArrows);
+eArrows.frustumCulled = false; modelRoot.add(eArrows);
 
 function ramp(u) {
   u = u < 0 ? 0 : u > 1 ? 1 : u;
@@ -737,7 +745,8 @@ function squash(x, y, z) {
 // start at u = 0.62, which closes by r ~ 14.
 function seeds(t) {
   const out = [];
-  const perM = Math.max(8, Math.round(S.nSeed / machineList(S.mode).length));
+  const seedCount = renderer.xr.isPresenting ? Math.min(S.nSeed, 15) : S.nSeed;
+  const perM = Math.max(8, Math.round(seedCount / machineList(S.mode).length));
   const rings = [[0.62, 0.24], [0.78, 0.34], [0.93, 0.42]];
   for (const M of machineList(S.mode)) {
     // machine B's pattern leads, lags or counter-rotates per its (sc, ss) weights
@@ -948,19 +957,78 @@ function drawScopes(t) {
   const cu = ((t % TAU) / (2 * TAU)) * W2, yy = map(Ufn(S.mode, t).U);
   ctxU.strokeStyle = 'rgba(51,207,192,.4)'; ctxU.beginPath(); ctxU.moveTo(cu, 0); ctxU.lineTo(cu, H2); ctxU.stroke();
   ctxU.fillStyle = '#dcf3ff'; ctxU.beginPath(); ctxU.arc(cu, yy, 2.8, 0, TAU); ctxU.fill();
-  ctxU.fillStyle = '#4e5d69'; ctxU.font = '9px "IBM Plex Mono", monospace';
+  ctxU.fillStyle = '#4e5d69'; ctxU.font = '9px ui-monospace, monospace';
   ctxU.fillText('+2', 3, y2 + 8); ctxU.fillText('−2', 3, y0 - 1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Frame
    ═══════════════════════════════════════════════════════════════════════════ */
-let last = performance.now(), advect = 0, ready = false;
+let last = performance.now(), advect = 0, ready = false, lastFieldUpdate = -Infinity;
+let xrScale = 1;
+const xrButtons = { right: [false, false] };
+
+function resetXRPlacement() {
+  const fit = S.mode === 'single' ? 0.22 : 0.14;
+  xrScale = 1;
+  xrPlacement.position.set(0, 1.25, -1.5);
+  xrPlacement.rotation.set(0, 0, 0);
+  xrPlacement.scale.setScalar(fit);
+  modelRoot.rotation.set(-Math.PI / 2, 0, 0);
+}
+
+function setPlaying(value) {
+  S.playing = value;
+  bPlay.textContent = value ? 'Pause' : 'Play';
+  bPlay.setAttribute('aria-pressed', String(value));
+}
+
+function axisPair(gamepad) {
+  return gamepad.axes.length >= 4 ? [gamepad.axes[2], gamepad.axes[3]] : [gamepad.axes[0] || 0, gamepad.axes[1] || 0];
+}
+
+function updateXRControls(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const [x0, y0] = axisPair(source.gamepad);
+    const x = applyDeadzone(x0);
+    const y = applyDeadzone(y0);
+    if (source.handedness === 'left') {
+      xrScale = nextScale(xrScale, y, dt);
+      const fit = S.mode === 'single' ? 0.22 : 0.14;
+      xrPlacement.scale.setScalar(fit * xrScale);
+    } else if (source.handedness === 'right') {
+      xrPlacement.rotation.y -= x * dt * 1.5;
+      xrPlacement.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, xrPlacement.rotation.x + y * dt * 1.2));
+      const a = !!source.gamepad.buttons[4]?.pressed;
+      const b = !!source.gamepad.buttons[5]?.pressed;
+      if (pressedEdge(a, xrButtons.right[0])) setPlaying(!S.playing);
+      if (pressedEdge(b, xrButtons.right[1])) resetXRPlacement();
+      xrButtons.right[0] = a; xrButtons.right[1] = b;
+    }
+  }
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+  resetXRPlacement();
+  renderer.xr.setFoveation(1);
+  lastFieldUpdate = -Infinity;
+});
+renderer.xr.addEventListener('sessionend', () => {
+  xrPlacement.position.set(0, 0, 0);
+  xrPlacement.rotation.set(0, 0, 0);
+  xrPlacement.scale.setScalar(1);
+  modelRoot.rotation.set(0, 0, 0);
+  xrButtons.right.fill(false);
+  applyCam();
+});
 
 function frame(now) {
-  requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!ready) return;
+  if (renderer.xr.isPresenting) updateXRControls(dt);
   if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
   advect = (advect + dt * 0.28) % 1;
 
@@ -990,7 +1058,11 @@ function frame(now) {
 
   lines.visible = S.showB; parts.visible = S.showB && S.showP; eArrows.visible = S.showE;
 
-  if (S.showB) { blend(c, s); traceLines(S.t); if (S.showP) updateParticles(advect); }
+  if (S.showB) {
+    const updateField = !renderer.xr.isPresenting || now - lastFieldUpdate >= 1000 / 24;
+    if (updateField) { blend(c, s); traceLines(S.t); lastFieldUpdate = now; }
+    if (S.showP) updateParticles(advect);
+  }
   const epk = updateE(c, s);
   if (S.showEz) updateWalls(c, s);
 
@@ -1040,13 +1112,8 @@ const sS = document.getElementById('sS'), vS = document.getElementById('vS');
 sS.addEventListener('input', () => { S.speed = +sS.value / 100; vS.textContent = S.speed.toFixed(2) + '×'; });
 
 const bPlay = document.getElementById('bPlay');
-bPlay.textContent = S.playing ? 'Pause' : 'Run';
-bPlay.setAttribute('aria-pressed', String(S.playing));
-bPlay.addEventListener('click', () => {
-  S.playing = !S.playing;
-  bPlay.textContent = S.playing ? 'Pause' : 'Run';
-  bPlay.setAttribute('aria-pressed', String(S.playing));
-});
+setPlaying(S.playing);
+bPlay.addEventListener('click', () => setPlaying(!S.playing));
 
 let axial = false;
 document.getElementById('bView').addEventListener('click', e => {
@@ -1068,6 +1135,7 @@ document.getElementById('modes').addEventListener('click', async e => {
   cam.th = 0.72; cam.ph = 1.14;
   cam.r = m === 'single' ? 12.5 : 17; cam.tgt.set(0, 0, 0); applyCam();
   await run();
+  if (renderer.xr.isPresenting) resetXRPlacement();
 });
 
 document.getElementById('toggleRail').addEventListener('click', e => {
@@ -1090,6 +1158,7 @@ addEventListener('resize', resize);
 
 /* ─────────────────────────────────────────────────────────────────── boot */
 const veil = document.getElementById('veil'), bar = document.querySelector('#bar i'), pct = document.getElementById('pct');
+let vrButton = null;
 async function run() {
   ready = false;
   veil.classList.remove('gone');
@@ -1098,9 +1167,13 @@ async function run() {
   await precompute(p => { bar.style.width = (p * 100).toFixed(0) + '%'; pct.textContent = (p * 100).toFixed(0) + '%'; });
   ready = true;
   veil.classList.add('gone');
+  if (!vrButton) {
+    vrButton = VRButton.createButton(renderer, { optionalFeatures: ['local-floor'] });
+    document.body.appendChild(vrButton);
+  }
 }
 resize(); applyCam();
-requestAnimationFrame(frame);
+renderer.setAnimationLoop(frame);
 run();
 </script>
 </body>
