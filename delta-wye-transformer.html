@@ -18,6 +18,7 @@ body{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   color:var(--ink); font-size:12px; -webkit-font-smoothing:antialiased;
 }
+a{color:var(--accent)}
 #stage{position:fixed;inset:0}
 canvas#gl{display:block;width:100%;height:100%}
 
@@ -237,11 +238,12 @@ import * as THREE from 'three';
 import { VRButton } from './vendor/VRButton.js';
 import { applyDeadzone, nextScale } from './xr-controls.js';
 import { fieldB, fieldA } from './field-kernels.js';
-import { GEOM, ELEC, C, toWcWs, solve, windingSegs, fluxLoopSegs, fluxBundleSpans } from './transformer-model.js';
+import { GEOM, C, toWcWs, solve, windingSegs, fluxLoopSegs, fluxBundleSpans } from './transformer-model.js';
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════════════
    Geometry and physics constants. See transformer-model.js for the magnetic
-   circuit solve and field-source segments (consumed starting Task 6/7).
+   circuit solve and field-source segments, consumed by the field precompute
+   below.
    ═══════════════════════════════════════════════════════════════════════════ */
 const TAU = Math.PI * 2;
 const { limbX, limbTop, rCore, rLV, rHV, windHalf } = GEOM;
@@ -268,8 +270,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Page state. Structure/drive fields are wired to visible behaviour on the
 // static meshes; the field-render and load fields (S.showPhi / S.showLeakB /
-// S.showE / S.load) are consumed by the flux/leakage/induced layers below
-// (Task 6) — the scope canvases and full readout table stay Task 7.
+// S.showE / S.load) are consumed by the flux/leakage/induced layers below,
+// while the scope canvases and full readout table are driven separately.
 const S = {
   t: 0, playing: !reduceMotion, speed: 0.01,
   showCore: true, showW1: true, showW2: true, showJumpers: true,
@@ -362,8 +364,8 @@ function applyCam() {
 
 /* ─────────────────────────────────────────────────────────── static meshes
    Core, windings and connection jumpers never change shape after boot — the
-   circuit solve only changes colours/intensities (Task 6/7), so this all
-   runs once. */
+   circuit solve only changes colours/intensities via the field layers below,
+   so this all runs once. */
 const gCore = new THREE.Group(); modelRoot.add(gCore);
 const gW1 = new THREE.Group(); modelRoot.add(gW1);   // primary HV delta windings
 const gW2 = new THREE.Group(); modelRoot.add(gW2);   // secondary LV wye windings
@@ -387,7 +389,7 @@ function pathTube(points, radius, mat, segs = 48) {
 
 // A helical-look winding: a smooth tube tracing turns loops of radius r on
 // limb k, spanning z in [-windHalf, +windHalf]. Purely visual — the field
-// solve (Task 6/7) uses the discrete loop stack from windingSegs() instead.
+// solve uses the discrete loop stack from windingSegs() instead.
 function windingCurvePoints(cx, r, turns) {
   const perTurn = 10;
   const total = turns * perTurn;
@@ -472,7 +474,7 @@ function buildMeshes() {
 }
 buildMeshes();
 
-/* ─────────────────────────────────────────────── Task 6/7 precompute seam
+/* ──────────────────────────────────────────────────────── field precompute
    Precompute (once, synchronous — well under a video frame): the full-load
    circuit solve and its two field-source segment sets, the B/E probe grids,
    and the fixed Bref/Eref normalization constants. Field-line/bundle
@@ -495,6 +497,11 @@ function nearIron(x, z) {
   }
   return false;
 }
+// Excludes everything within rHV + margin of a limb axis, which also covers
+// the LV-HV gap annulus (rLV to rHV) between the two windings. That gap's
+// |B| runs ~5-7x the exterior max, so sampling it would inflate Bref and
+// crush every exterior arrow toward zero on the shared scale — omitting it
+// is a deliberate visual tradeoff, not an oversight.
 function nearWinding(x, z) {
   for (const lx of limbX) {
     if (Math.abs(x - lx) < rHV + IRON_MARGIN && Math.abs(z) < windHalf + IRON_MARGIN) return true;
@@ -534,6 +541,10 @@ const STRAND_OFFSETS = Array.from({ length: STRANDS }, (_, i) =>
   i === 0 ? [0, 0] : [Math.cos((i - 1) * TAU / (STRANDS - 1)), Math.sin((i - 1) * TAU / (STRANDS - 1))]);
 
 let BP = null, EP = null, FLUX_SPANS = [], Bref = 1, Eref = 1, PhiMax = 1;
+// Induced-E display scale, set alongside Eref inside the precompute step
+// below so it can never be evaluated before Eref is known regardless of
+// statement order.
+let E_ARROW_SCALE = 0.42;
 let gFlux, gBArrows, gEArrows;
 
 // Load-independent phasor caches for the scope canvases and the fixed
@@ -586,6 +597,7 @@ function precompute() {
   let em = 0;
   for (let i = 0; i < EP.n; i++) em = Math.max(em, Math.hypot(EP.acs[i*3], EP.acs[i*3+1], EP.acs[i*3+2]));
   Eref = em || 1;
+  E_ARROW_SCALE = 0.42 / Eref;
 
   // Flux-bundle spans: precompute each span's basis (direction, in-plane
   // perpendicular) and its (wc, ws) flux phasor — PHI is load-independent,
@@ -730,11 +742,11 @@ function updateBArrows(c, s, load) {
   gBArrows.geometry.attributes.color.needsUpdate = true;
 }
 
-// Induced-E arrows: E(t) = w*[s*(load*Awc + Acc) - c*(load*Aws + Acs)], w=1.
+// Induced-E arrows: E(t) = omega*[s*(load*Awc + Acc) - c*(load*Aws + Acs)],
+// omega = 1 (normalized).
 // Load multiplies ONLY the winding part (Awc/Aws) — the core part (Acc/Acs)
 // is fixed, so E is nonzero even at load=0. Two-tone by the sign of
 // E . (azimuthal unit vector around the probe's own limb axis).
-const E_ARROW_SCALE = 0.42 / Eref;
 const EMB_RGB = [1.0, 0.57, 0.32], VIO_RGB = [0.61, 0.48, 1.0];
 function updateEArrows(c, s, load) {
   const pos = gEArrows.geometry.attributes.position.array, col = gEArrows.geometry.attributes.color.array;
@@ -908,8 +920,8 @@ recomputeLoad();
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Frame — advance ωt, apply structure toggles, blend/redraw the visible
-   field layers from the Task 6 precompute, redraw the scopes and readout
-   table (Task 7), render.
+   field layers from the precompute above, redraw the scopes and readout
+   table, render.
    ═══════════════════════════════════════════════════════════════════════════ */
 let last = 0;
 function frame(now) {
@@ -948,7 +960,7 @@ function bindBox(id, key) {
 }
 bindBox('cI', 'showCore'); bindBox('cW1', 'showW1'); bindBox('cW2', 'showW2'); bindBox('cJ', 'showJumpers');
 // cF/cB/cE (field render toggles) drive gFlux/gBArrows/gEArrows visibility
-// in frame(); sL drives S.load, read by the B/E blend each frame (Task 6).
+// in frame(); sL drives S.load, read by the B/E blend each frame.
 bindBox('cF', 'showPhi'); bindBox('cB', 'showLeakB'); bindBox('cE', 'showE');
 
 const sT = document.getElementById('sT'), vT = document.getElementById('vT');
@@ -976,7 +988,7 @@ bPlay.addEventListener('click', () => setPlaying(!S.playing));
 let front = false;
 document.getElementById('bView').addEventListener('click', e => {
   front = !front;
-  if (front) { cam.th = 0; cam.ph = Math.PI / 2; cam.r = 8.5; e.target.textContent = 'Three-quarter view'; }
+  if (front) { cam.th = -Math.PI / 2; cam.ph = Math.PI / 2; cam.r = 8.5; e.target.textContent = 'Three-quarter view'; }
   else { cam.th = 0.72; cam.ph = 1.14; cam.r = 9.5; e.target.textContent = 'Front view'; }
   applyCam();
 });

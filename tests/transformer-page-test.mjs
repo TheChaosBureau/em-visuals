@@ -10,6 +10,7 @@ const workflow = fs.readFileSync(new URL('../.github/workflows/pages.yml', impor
 
 test('transformer page is self-contained and project-path safe', () => {
   assert.doesNotMatch(html, /(?:src|href)=["']https?:/i);
+  assert.doesNotMatch(html, /fonts\.googleapis|cdnjs/i);
   assert.match(html, /\.\/vendor\/three\.module\.js/);
   assert.match(html, /\.\/vendor\/VRButton\.js/);
   assert.match(html, /\.\/field-kernels\.js/);

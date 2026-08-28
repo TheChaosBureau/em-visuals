@@ -17,7 +17,7 @@ export const C = {
   arg(a) { return Math.atan2(a[1], a[0]); }
 };
 
-// Wye synthesis: x(t) = Re[X·e^{jωt}] = wc·cos(ωt) + ws·sin(ωt)
+// Time synthesis: x(t) = Re[X·e^{jωt}] = wc·cos(ωt) + ws·sin(ωt)
 export function toWcWs(X) {
   return [X[0], -X[1]];
 }

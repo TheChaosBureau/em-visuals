@@ -17,7 +17,7 @@ python3 -m http.server 8000
 
 The published build is deployed by GitHub Actions to `https://thechaosbureau.github.io/em-visuals/`, with the machine page as the site root.
 
-## Quest controls
+## Quest controls (`rotating-field-machine.html`)
 
 - Point at either motor and hold the controller trigger to pick it up; release the trigger to place it
 - Each controller can hold a different motor at the same time
@@ -29,12 +29,16 @@ The published build is deployed by GitHub Actions to `https://thechaosbureau.git
 
 Configure field and machine options in the browser panel before selecting **Enter VR**.
 
-## Desktop motor controls
+`delta-wye-transformer.html` is view-only in XR: orbit/rotate and scale the whole scene with the right/left thumbsticks, but there is nothing to grab.
+
+## Desktop motor controls (`rotating-field-machine.html`)
 
 - Drag a motor to move it parallel to the screen
 - Shift-drag a motor to move it toward or away from the camera
 - Right-drag a motor to rotate it
 - Releasing the motor recomputes the combined electromagnetic field
+
+`delta-wye-transformer.html` is view-only on desktop too: drag to orbit, shift-drag to pan, scroll to zoom — no grab.
 
 ## Verify
 

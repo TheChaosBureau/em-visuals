@@ -62,8 +62,7 @@ test('published page identifies its commit and deployment time', () => {
   assert.match(html, /<time datetime="__BUILD_TIME__">__BUILD_TIME__<\/time>/);
   assert.match(workflow, /git rev-parse --short=7 HEAD/);
   assert.match(workflow, /date -u \+'%Y-%m-%dT%H:%M:%SZ'/);
-  assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html/);
-  assert.match(workflow, /_site\/delta-wye-transformer\.html/);
+  assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html _site\/rotating-field-machine\.html _site\/delta-wye-transformer\.html/);
 });
 
 test('vendored runtime and license are present', () => {

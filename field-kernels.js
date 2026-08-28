@@ -1,5 +1,5 @@
 // Exact finite-segment Biot-Savart and vector-potential kernels.
-// Units: mu0*I*N/(4*pi) = 1, R_bore = 1.
+// Units: mu0*I*N/(4*pi) = 1.
 // Verified by verify_fields.js.
 
 export function fieldB(px, py, pz, SEG) {
