@@ -995,7 +995,8 @@ function resetXRPlacement() {
   xrPlacement.position.set(0, 0.75, -1.5);
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(fit);
-  modelRoot.rotation.set(-Math.PI / 2, 0, 0);
+  // The model's bore/shaft axis is +Z; present it horizontally along world +X.
+  modelRoot.rotation.set(0, Math.PI / 2, 0);
 }
 
 function setPlaying(value) {
