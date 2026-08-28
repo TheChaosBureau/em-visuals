@@ -2,6 +2,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.mjs && node verify_fields.js"
+    "test": "node --test tests/*.mjs && node verify_fields.js && node verify_transformer.js"
   }
 }
