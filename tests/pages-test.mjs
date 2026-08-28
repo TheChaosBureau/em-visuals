@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const html = fs.readFileSync(new URL('../rotating-field-machine.html', import.meta.url), 'utf8');
+const workflow = fs.readFileSync(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
 
 test('page is self-contained and project-path safe', () => {
   assert.doesNotMatch(html, /(?:src|href)=["']https?:/i);
@@ -18,10 +19,22 @@ test('renderer uses the WebXR-owned animation loop', () => {
   assert.doesNotMatch(html, /requestAnimationFrame\(/);
 });
 
-test('motors default to a horizontal orientation in WebXR', () => {
+test('motors default to a horizontal orientation on desktop and in WebXR', () => {
+  assert.match(html, /const HORIZONTAL_ORIENTATION = Math\.PI \/ 2/);
+  assert.match(html, /xrPlacement\.add\(modelRoot\);[\s\S]*?modelRoot\.rotation\.set\(0, HORIZONTAL_ORIENTATION, 0\)/);
   const reset = html.match(/function resetXRPlacement\(\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
-  assert.match(reset, /modelRoot\.rotation\.set\(0, Math\.PI \/ 2, 0\)/);
+  assert.match(reset, /modelRoot\.rotation\.set\(0, HORIZONTAL_ORIENTATION, 0\)/);
   assert.doesNotMatch(reset, /modelRoot\.rotation\.set\(-Math\.PI \/ 2, 0, 0\)/);
+  const sessionEnd = html.match(/renderer\.xr\.addEventListener\('sessionend', \(\) => \{([\s\S]*?)\n\}\);/)?.[1] ?? '';
+  assert.match(sessionEnd, /modelRoot\.rotation\.set\(0, HORIZONTAL_ORIENTATION, 0\)/);
+});
+
+test('published page identifies its commit and deployment time', () => {
+  assert.match(html, /build <code>__BUILD_HASH__<\/code> · published/);
+  assert.match(html, /<time datetime="__BUILD_TIME__">__BUILD_TIME__<\/time>/);
+  assert.match(workflow, /git rev-parse --short=7 HEAD/);
+  assert.match(workflow, /date -u \+'%Y-%m-%dT%H:%M:%SZ'/);
+  assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html/);
 });
 
 test('vendored runtime and license are present', () => {
