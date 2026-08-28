@@ -29,6 +29,10 @@ test('transformer page carries the build stamp and is deployed by the workflow',
   assert.match(workflow, /transformer-model\.js/);
 });
 
+test('transformer page has cross-link to the machine page', () => {
+  assert.match(html, /rotating-field-machine\.html/);
+});
+
 test('embedded module script is syntactically valid JS', () => {
   const m = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   assert.ok(m, 'module script block found');

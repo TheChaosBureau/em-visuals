@@ -2,15 +2,20 @@
 
 Interactive Three.js field visualizations, including an immersive WebXR view for Meta Quest.
 
+## Pages
+
+- `rotating-field-machine.html` — Rotating-field 2-pole machine, E and B
+- `delta-wye-transformer.html` — 3-phase delta–wye transformer on a 3-limb core (Dy11): core flux, leakage B, induced E
+
 ## Run locally
 
-WebXR requires HTTPS outside `localhost`. For desktop development, serve the repository and open `rotating-field-machine.html`:
+WebXR requires HTTPS outside `localhost`. For desktop development, serve the repository and open either page:
 
 ```sh
 python3 -m http.server 8000
 ```
 
-The published build is deployed by GitHub Actions to `https://thechaosbureau.github.io/em-visuals/`.
+The published build is deployed by GitHub Actions to `https://thechaosbureau.github.io/em-visuals/`, with the machine page as the site root.
 
 ## Quest controls
 
@@ -36,5 +41,7 @@ Configure field and machine options in the browser panel before selecting **Ente
 ```sh
 npm test
 ```
+
+This runs the test suites, then `verify_fields.js` (machine page) and `verify_transformer.js` (transformer page).
 
 Three.js `0.185.1` and its WebXR `VRButton` helper are vendored under `vendor/`; see `vendor/THREE-LICENSE.txt`.

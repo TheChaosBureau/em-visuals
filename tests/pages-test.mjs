@@ -63,10 +63,15 @@ test('published page identifies its commit and deployment time', () => {
   assert.match(workflow, /git rev-parse --short=7 HEAD/);
   assert.match(workflow, /date -u \+'%Y-%m-%dT%H:%M:%SZ'/);
   assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html/);
+  assert.match(workflow, /_site\/delta-wye-transformer\.html/);
 });
 
 test('vendored runtime and license are present', () => {
   for (const path of ['vendor/three.module.js', 'vendor/three.core.js', 'vendor/VRButton.js', 'vendor/THREE-LICENSE.txt']) {
     assert.ok(fs.statSync(new URL(`../${path}`, import.meta.url)).size > 0, path);
   }
+});
+
+test('machine page has cross-link to the transformer page', () => {
+  assert.match(html, /delta-wye-transformer\.html/);
 });
