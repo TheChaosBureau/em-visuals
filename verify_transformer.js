@@ -87,25 +87,24 @@ function circleCirculation(vecFn, cx, cy0, z, r, N = 2000) {
 // -- 1. duality normalization -------------------------------------------
 console.log('1. Duality normalization: unit-flux loop via fieldB, A-circulation = Phi');
 {
-  // Standalone rectangle mirroring fluxLoopSegs' point order/traversal, with
-  // weight 1/(4*pi) => unit flux (Phi = 1) up the left leg (x = xL).
-  const xL = -1, xR = 1, zTop = 1.5;
-  const SEG = new Float64Array(4 * 8);
-  const pts = [[xL, 0, -zTop], [xL, 0, zTop], [xR, 0, zTop], [xR, 0, -zTop]];
-  for (let i = 0; i < 4; i++) {
-    const a = pts[i], b = pts[(i + 1) % 4];
-    const off = i * 8;
-    SEG[off] = a[0]; SEG[off + 1] = a[1]; SEG[off + 2] = a[2];
-    SEG[off + 3] = b[0]; SEG[off + 4] = b[1]; SEG[off + 5] = b[2];
-    SEG[off + 6] = 1 / (4 * Math.PI); SEG[off + 7] = 0;
-  }
-  const Avec = (x, y, z) => AcoreRaw([x, y, z], SEG).slice(0, 3);
+  // Drives the PRODUCTION fluxLoopSegs itself (not a standalone rectangle),
+  // so this check actually gates transformer-model.js's 1/(4*pi) constant --
+  // a synthetic rectangle with its own hardcoded weight would verify the
+  // fieldB kernel's circulation but could never fail if fluxLoopSegs' own
+  // constant regressed (e.g. to 1/(2*pi)). fluxLoopSegs only consumes
+  // sol.PHI, so a minimal synthetic sol suffices: mesh L (limb 0 - limb 1)
+  // carries Phi[0] = 1 (unit flux, real), mesh R carries Phi[2] = 0 (inert).
+  const sol = { PHI: [[1, 0], [0, 0], [0, 0]] };
+  const SEGflux = fluxLoopSegs(sol);
+  const { limbX } = GEOM;
+  const Avec = (x, y, z) => AcoreRaw([x, y, z], SEGflux).slice(0, 3);
 
-  const linked = circleCirculation(Avec, xL, 0, 0, 0.3);
-  check('A-circulation linking left leg (x=xL) = Phi', linked, 1.0, 0.01);
+  const linked = circleCirculation(Avec, limbX[0], 0, 0, 0.3);
+  check('A-circulation linking limb 0 (mesh L left leg) = Phi', linked, 1.0, 0.01);
 
-  const unlinked = circleCirculation(Avec, 0, 0, 0, 0.3);
-  check('A-circulation NOT linking the loop (interior point) = 0', unlinked, 0, 0.01);
+  const midX = 0.5 * (limbX[0] + limbX[1]);   // mesh L interior, no leg nearby
+  const unlinked = circleCirculation(Avec, midX, 0, 0, 0.3);
+  check('A-circulation NOT linking any leg (mesh-L interior point) = 0', unlinked, 0, 0.01);
 }
 
 // -- 2. curl A_core = 0 and div A_core = 0 off the skeleton ------------------
@@ -127,14 +126,18 @@ console.log('\n2. curl A_core = 0, div A_core = 0 off the flux skeleton');
 // -- 3. Faraday closes the loop (E sign guard) -------------------------------
 console.log('\n3. Faraday: loop(E)·dl around limb k = -d(phi_k)/dt(t)  (sum of core+winding parts)');
 // Tolerance note: the winding part is not exactly null on this loop (radius
-// rLV, coincident with the secondary coil's own radius) -- a finite 12-turn,
-// windHalf=1.1-long solenoid pair leaks a few % of flux through its own bore
-// disk even though primary+secondary ampere-turns cancel exactly (verified:
-// leakage flux at this radius shrinks from ~0.2 to ~0.004 as the synthetic
-// solenoid length is swept 1.1 -> 30, confirming it -> 0 as length -> infinity,
-// i.e. genuine finite-length leakage, not a sign/4pi bug). Core-only matches
-// the Faraday relation to 1e-13 exactly. Tolerance loosened 2% -> 7% of |PHI_k|
-// to absorb this leakage (observed max ~6.3%) while still catching a sign flip.
+// rLV, coincident with the secondary coil's own radius) -- primary+secondary
+// ampere-turns cancel exactly, but nLoops=12 discrete rings approximate a
+// continuous solenoid current sheet only to O(ring spacing): refining the
+// ring spacing (holding solenoid length fixed, so turn density increases)
+// drives the residual down roughly linearly in spacing (~10.95% at spacing
+// 0.20 -> ~1.88% at spacing 0.025); holding turn density fixed while varying
+// length instead does NOT shrink it (plateaus ~11%), so the dominant
+// mechanism is ring-count discretization of nLoops=12, not solenoid length.
+// Core-only matches the Faraday relation to 1e-13 exactly, confirming this is
+// finite-geometry leakage, not a sign/4pi bug. Tolerance loosened 2% -> 7% of
+// |PHI_k| to absorb this leakage (observed max ~6.3%) while still catching a
+// sign flip.
 {
   const sol = solve(1);
   const SEGflux = fluxLoopSegs(sol);
@@ -178,7 +181,7 @@ console.log('\n5. Full load: opposing solenoid fields cancel on the limb axis in
 // single-t snapshot: with 3-phase currents, a fixed t can land near limb k's
 // own zero-crossing while neighbouring limbs are near peak, making a t=0
 // magnitude ratio noisy/misleading even though the physics is fine. Observed
-// ratio is a consistent ~4.4-5.1% across all limbs/z (not an outlier), so the
+// ratio is consistent across all limbs/z, max 4.863% (limb 2, z=0) -- so the
 // 5% target is loosened minimally to 6% to absorb finite-geometry rounding.
 {
   const sol = solve(1);
@@ -196,19 +199,25 @@ console.log('\n5. Full load: opposing solenoid fields cancel on the limb axis in
 
 // -- 6. Leakage far field is the sum of three limb dipoles -------------------
 console.log('\n6. Exterior field matches superposed limb dipoles (m_z,k = Ns*is_k(0)*pi*(rHV^2-rLV^2))');
-// Tolerance note: an R-sweep (8/16/32/64/128) shows the relative error falls
-// from ~6.4%/2.2% (R=8/16) toward a ~1.1-1.2% floor rather than vanishing --
-// the initial falloff (halving with R, as expected for a next-order multipole
-// correction) confirms the leading dipole term is right; the floor is a
-// Float32Array precision limit in windingSegs' segment weights meeting
-// near-total cancellation of primary/secondary contributions at large R (not
-// a sign/4pi bug). Loosened minimally: 5%->7% at R=8, 2%->2.5% at R=16.
+// Tolerance note: windingSegs draws each turn as a segsPerLoop-gon, not a
+// true circle, so its enclosed area (and hence its dipole moment) is smaller
+// than pi*r^2 by the regular-polygon area ratio N*sin(2*pi/N)/(2*pi); for
+// N=24 that is ~0.988616, i.e. a ~1.14% deficit -- this, not floating-point
+// precision, is what an uncorrected point-dipole comparison floors out at
+// (confirmed: substituting a Float64Array copy of windingSegs' output gives
+// bit-identical errors at every radius, ruling out Float32Array precision).
+// mz is corrected below by that exact polygon-area factor (computed from
+// GEOM.segsPerLoop, not hardcoded); after correction the residual R=16 error
+// is ~1.3% (tol restored to 2%). R=8 keeps a small loosening to 7% for the
+// next-order multipole term, which at R=8 (only ~3.6x the limb spacing) is
+// not yet negligible.
 {
   const sol = solve(1);
   const SEGwind = windingSegs(sol);
-  const { limbX, rLV, rHV } = GEOM;
+  const { limbX, rLV, rHV, segsPerLoop } = GEOM;
   const isAt0 = sol.Is.map(is => toWcWs(is)[0]);   // is_k(0) = Re(Is[k])
-  const mz = isAt0.map(i0 => ELEC.Ns * i0 * Math.PI * (rHV * rHV - rLV * rLV));
+  const polyAreaFactor = segsPerLoop * Math.sin(TAU / segsPerLoop) / TAU;   // regular N-gon area / pi*r^2
+  const mz = isAt0.map(i0 => ELEC.Ns * i0 * Math.PI * (rHV * rHV - rLV * rLV) * polyAreaFactor);
   const centers = limbX.map(x => [x, 0, 0]);
 
   const dipoleB = (p) => {
@@ -230,7 +239,7 @@ console.log('\n6. Exterior field matches superposed limb dipoles (m_z,k = Ns*is_
       const b = Bat(p, SEGwind, 0);
       const bd = dipoleB(p);
       const err = Math.hypot(b[0] - bd[0], b[1] - bd[1], b[2] - bd[2]) / Math.max(nrm(bd), 1e-15);
-      check(`R=${R} dir=[${dir}] rel err vs 3-dipole superposition`, err, 0, R === 8 ? 0.07 : 0.025);
+      check(`R=${R} dir=[${dir}] rel err vs 3-dipole superposition`, err, 0, R === 8 ? 0.07 : 0.02);
     }
   }
 }
