@@ -254,7 +254,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
 <script type="module">
 import * as THREE from 'three';
 import { VRButton } from './vendor/VRButton.js';
-import { applyDeadzone, nextScale, pressedEdge } from './xr-controls.js';
+import { applyDeadzone, nextScale, pressedEdge, beginGrab, endGrab } from './xr-controls.js';
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════════════
    Geometry and physics constants.  Units: R_bore = 1, mu0*I*N/(4*pi) = 1.
@@ -277,6 +277,22 @@ const S = {
   showW: true, showI: true, showR: false, showM: true, cut: true,
   nSeed: 24
 };
+let machinePoses = [];
+
+function ensureMachinePoses(mode) {
+  const n = mode === 'single' ? 1 : 2;
+  if (machinePoses.length !== n) machinePoses = Array.from({ length: n }, () => ({
+    position: new THREE.Vector3(), quaternion: new THREE.Quaternion()
+  }));
+}
+
+function posedPoint(M, machineIndex, x, y, z) {
+  ensureMachinePoses(S.mode);
+  return new THREE.Vector3(x, y, z)
+    .applyQuaternion(machinePoses[machineIndex].quaternion)
+    .add(machinePoses[machineIndex].position)
+    .add(new THREE.Vector3(M.cx, 0, 0));
+}
 
 /* ─────────────────────────────────────────────────────── winding geometry */
 function coilPath(phi, gamDeg, cx) {
@@ -306,12 +322,21 @@ function machineList(mode) {
 
 function buildCoils(mode) {
   const coils = [];
-  for (const M of machineList(mode))
+  ensureMachinePoses(mode);
+  machineList(mode).forEach((M, machineIndex) => {
     for (let k = 0; k < 3; k++) {
       const phi = k * TAU / 3;
       const wc = Math.cos(k * TAU / 3) * M.sc, ws = Math.sin(k * TAU / 3) * M.ss;
-      for (const g of GAMMAS) coils.push({ pts: coilPath(phi, g, M.cx), k, wc, ws, cx: M.cx, sc: M.sc, ss: M.ss });
+      for (const g of GAMMAS) {
+        const localPts = coilPath(phi, g, 0);
+        const pts = localPts.map(p => {
+          const q = posedPoint(M, machineIndex, p[0], p[1], p[2]);
+          return [q.x, q.y, q.z];
+        });
+        coils.push({ pts, localPts, k, wc, ws, cx: M.cx, sc: M.sc, ss: M.ss, machineIndex });
+      }
     }
+  });
   return coils;
 }
 
@@ -456,6 +481,8 @@ function applyCam() {
 const gMachines = new THREE.Group(); modelRoot.add(gMachines);
 const coilMats = [];      // {mat, k, sc, ss}
 const wallMeshes = [];    // bore-wall E_z maps
+const motorRoots = [];
+const motorHitTargets = [];
 
 function ring(ri, ro, z, mat) {
   const g = new THREE.RingGeometry(ri, ro, 96, 1);
@@ -472,7 +499,7 @@ function buildMeshes(coils) {
     if (o.material) o.material.dispose();
   });
   while (gMachines.children.length) gMachines.remove(gMachines.children[0]);
-  coilMats.length = 0; wallMeshes.length = 0;
+  coilMats.length = 0; wallMeshes.length = 0; motorRoots.length = 0; motorHitTargets.length = 0;
 
   const ironMat = new THREE.MeshStandardMaterial({
     color: 0x35434f, metalness: 0.55, roughness: 0.62, transparent: true, opacity: 0.2,
@@ -483,31 +510,50 @@ function buildMeshes(coils) {
     side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [clipPlane]
   });
 
-  for (const M of machineList(S.mode)) {
-    const iron = new THREE.Group(); iron.position.x = M.cx; iron.userData.kind = 'iron';
+  machineList(S.mode).forEach((M, machineIndex) => {
+    const motorRoot = new THREE.Group();
+    motorRoot.userData.machineIndex = machineIndex;
+    motorRoot.position.set(M.cx, 0, 0).add(machinePoses[machineIndex].position);
+    motorRoot.quaternion.copy(machinePoses[machineIndex].quaternion);
+    motorRoot.userData.homePosition = motorRoot.position.clone();
+    motorRoot.userData.homeQuaternion = motorRoot.quaternion.clone();
+    gMachines.add(motorRoot); motorRoots.push(motorRoot);
+
+    const hit = new THREE.Mesh(
+      new THREE.CylinderGeometry(R_OUT * 1.08, R_OUT * 1.08, LEN + HEND * 2.8, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0x33cfc0, wireframe: true, transparent: true, opacity: 0.32,
+        depthWrite: false, visible: false
+      })
+    );
+    hit.rotation.x = Math.PI / 2;
+    hit.userData.machineIndex = machineIndex; hit.userData.grabbable = true;
+    motorRoot.add(hit); motorHitTargets.push(hit);
+
+    const iron = new THREE.Group(); iron.userData.kind = 'iron';
     iron.add(tube(R_IN, LEN, ironMat), tube(R_OUT, LEN, ironMat));
     iron.add(ring(R_IN, R_OUT, LEN / 2, ironMat), ring(R_IN, R_OUT, -LEN / 2, ironMat));
-    gMachines.add(iron);
+    motorRoot.add(iron);
 
-    const rot = new THREE.Group(); rot.position.x = M.cx; rot.userData.kind = 'rotor';
+    const rot = new THREE.Group(); rot.userData.kind = 'rotor';
     rot.add(tube(R_ROT, LEN * 1.04, rotMat), ring(0, R_ROT, LEN * 0.52, rotMat), ring(0, R_ROT, -LEN * 0.52, rotMat));
     rot.add(tube(R_SH, LEN * 1.9, rotMat, false));
-    gMachines.add(rot);
+    motorRoot.add(rot);
 
     // bore wall, vertex-coloured with E_z
     const wg = new THREE.CylinderGeometry(R_BORE * 0.995, R_BORE * 0.995, LEN, 72, 14, true);
     const wm = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
       vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.85
     }));
-    wm.rotation.x = Math.PI / 2; wm.position.x = M.cx;
+    wm.rotation.x = Math.PI / 2;
     const nv = wg.attributes.position.count;
     wg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nv * 3), 3));
-    wm.userData.kind = 'wall'; wm.userData.cx = M.cx;
-    gMachines.add(wm); wallMeshes.push(wm);
-  }
+    wm.userData.kind = 'wall'; wm.userData.cx = M.cx; wm.userData.machineIndex = machineIndex;
+    motorRoot.add(wm); wallMeshes.push(wm);
+  });
 
   for (const c of coils) {
-    const pts = c.pts.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const pts = c.localPts.map(p => new THREE.Vector3(p[0], p[1], p[2]));
     const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.15);
     const g = new THREE.TubeGeometry(curve, 190, 0.036, 7, true);
     const base = new THREE.Color(PHASE_HEX[c.k]);
@@ -516,12 +562,12 @@ function buildMeshes(coils) {
       metalness: 0.35, roughness: 0.45
     });
     const mesh = new THREE.Mesh(g, mat); mesh.userData.kind = 'coil';
-    gMachines.add(mesh); coilMats.push({ mat, k: c.k, sc: c.sc, ss: c.ss });
+    motorRoots[c.machineIndex].add(mesh); coilMats.push({ mat, k: c.k, sc: c.sc, ss: c.ss });
   }
 
   // moment arrows
-  for (const M of machineList(S.mode)) {
-    const grp = new THREE.Group(); grp.position.x = M.cx; grp.userData.kind = 'm'; grp.userData.M = M;
+  machineList(S.mode).forEach((M, machineIndex) => {
+    const grp = new THREE.Group(); grp.userData.kind = 'm'; grp.userData.M = M;
     const mm = new THREE.MeshBasicMaterial({ color: 0xeef4f8 });
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.5, 12), mm);
     shaft.position.y = 0.75;
@@ -529,8 +575,8 @@ function buildMeshes(coils) {
     head.position.y = 1.62;
     const inner = new THREE.Group(); inner.add(shaft, head);
     grp.add(inner); grp.userData.inner = inner;
-    gMachines.add(grp);
-  }
+    motorRoots[machineIndex].add(grp);
+  });
 }
 
 /* ─────────────────────────────────────────────────── flux lines + tracers */
@@ -588,26 +634,31 @@ let nClosed = 0;
 // Fine grid resolves the bore and end region; coarse grid carries the return
 // path out far enough for every seeded line to close on itself.
 function makeGrids(mode) {
+  const centers = machineList(mode).map((M, i) => posedPoint(M, i, 0, 0, 0));
+  const xs = centers.map(p => p.x), ys = centers.map(p => p.y), zs = centers.map(p => p.z);
+  const bounds = pad => ({
+    x0: Math.min(...xs) - pad, x1: Math.max(...xs) + pad,
+    y0: Math.min(...ys) - pad, y1: Math.max(...ys) + pad,
+    z0: Math.min(...zs) - pad, z1: Math.max(...zs) + pad
+  });
   return mode === 'single'
-    ? [{ nx: 44, ny: 44, nz: 44, x0: -3.3, x1: 3.3, y0: -3.3, y1: 3.3, z0: -3.3, z1: 3.3 },
-       { nx: 36, ny: 36, nz: 36, x0: -8.0, x1: 8.0, y0: -8.0, y1: 8.0, z0: -8.0, z1: 8.0 }]
-    : [{ nx: 62, ny: 34, nz: 34, x0: -5.9, x1: 5.9, y0: -3.0, y1: 3.0, z0: -3.0, z1: 3.0 },
-       { nx: 42, ny: 32, nz: 32, x0: -10.5, x1: 10.5, y0: -8.0, y1: 8.0, z0: -8.0, z1: 8.0 }];
+    ? [{ nx: 44, ny: 44, nz: 44, ...bounds(3.3) }, { nx: 36, ny: 36, nz: 36, ...bounds(8.0) }]
+    : [{ nx: 62, ny: 40, nz: 40, ...bounds(3.3) }, { nx: 42, ny: 34, nz: 34, ...bounds(8.0) }];
 }
 
 function eProbes(mode) {
   const P = [];
-  for (const M of machineList(mode)) {
+  machineList(mode).forEach((M, machineIndex) => {
     for (let i = 0; i < 22; i++) {
       const th = i * TAU / 22;
       for (const z of [-0.94, -0.47, 0, 0.47, 0.94])
-        P.push([M.cx + 0.97 * Math.cos(th), 0.97 * Math.sin(th), z]);
+        { const p = posedPoint(M, machineIndex, 0.97 * Math.cos(th), 0.97 * Math.sin(th), z); P.push([p.x, p.y, p.z]); }
     }
     for (let i = 0; i < 12; i++) {
       const th = i * TAU / 12;
-      for (const r of [0.36, 0.68]) P.push([M.cx + r * Math.cos(th), r * Math.sin(th), 0]);
+      for (const r of [0.36, 0.68]) { const p = posedPoint(M, machineIndex, r * Math.cos(th), r * Math.sin(th), 0); P.push([p.x, p.y, p.z]); }
     }
-  }
+  });
   return P;
 }
 
@@ -618,18 +669,19 @@ async function precompute(onProgress) {
   SEG = packSegments(coils);
   buildMeshes(coils);
 
-  CXS = machineList(S.mode).map(m => m.cx);
-  MOM = machineList(S.mode).map(M => {
-    const s1 = packSegments(coils.filter(c => c.cx === M.cx));
+  CXS = machineList(S.mode).map((M, i) => posedPoint(M, i, 0, 0, 0));
+  MOM = machineList(S.mode).map((M, machineIndex) => {
+    const centre = CXS[machineIndex];
+    const s1 = packSegments(coils.filter(c => c.machineIndex === machineIndex));
     const mc = [0, 0, 0], msn = [0, 0, 0];
     for (let i = 0; i < s1.length; i += 8) {
-      const rx = 0.5*(s1[i]+s1[i+3]) - M.cx, ry = 0.5*(s1[i+1]+s1[i+4]), rz = 0.5*(s1[i+2]+s1[i+5]);
+      const rx = 0.5*(s1[i]+s1[i+3]) - centre.x, ry = 0.5*(s1[i+1]+s1[i+4]) - centre.y, rz = 0.5*(s1[i+2]+s1[i+5]) - centre.z;
       const dx = s1[i+3]-s1[i], dy = s1[i+4]-s1[i+1], dz = s1[i+5]-s1[i+2];
       const cx = ry*dz-rz*dy, cy = rz*dx-rx*dz, cz = rx*dy-ry*dx;
       mc[0]+=0.5*s1[i+6]*cx; mc[1]+=0.5*s1[i+6]*cy; mc[2]+=0.5*s1[i+6]*cz;
       msn[0]+=0.5*s1[i+7]*cx; msn[1]+=0.5*s1[i+7]*cy; msn[2]+=0.5*s1[i+7]*cz;
     }
-    return { cx: M.cx, mc, ms: msn };
+    return { centre, mc, ms: msn };
   });
   const gs = makeGrids(S.mode);
   const total = gs.reduce((a, g) => a + g.nx * g.ny * g.nz, 0);
@@ -670,17 +722,22 @@ async function precompute(onProgress) {
   for (const wm of wallMeshes) {
     const pos = wm.geometry.attributes.position, n = pos.count;
     const ac = new Float32Array(n), as = new Float32Array(n);   // axial component only
+    const machineIndex = wm.userData.machineIndex;
+    const M = machineList(S.mode)[machineIndex];
+    const axis = new THREE.Vector3(0, 0, 1).applyQuaternion(machinePoses[machineIndex].quaternion);
     for (let i = 0; i < n; i++) {
       // cylinder is built along Y then rotated; map back to world
-      const F = fieldA(wm.userData.cx + pos.getX(i), -pos.getZ(i), pos.getY(i), SEG);
-      ac[i] = F[2]; as[i] = F[5];
+      const p = posedPoint(M, machineIndex, pos.getX(i), -pos.getZ(i), pos.getY(i));
+      const F = fieldA(p.x, p.y, p.z, SEG);
+      ac[i] = F[0]*axis.x + F[1]*axis.y + F[2]*axis.z;
+      as[i] = F[3]*axis.x + F[4]*axis.y + F[5]*axis.z;
     }
     wm.userData.ac = ac; wm.userData.as = as;
   }
 
   // reference magnitudes
-  const c0 = machineList(S.mode)[0].cx;
-  const F0 = fieldB(c0, 0, 0, SEG); Bref = Math.hypot(F0[0], F0[1], F0[2]) || 1;
+  const c0 = CXS[0];
+  const F0 = fieldB(c0.x, c0.y, c0.z, SEG); Bref = Math.hypot(F0[0], F0[1], F0[2]) || 1;
   let em = 0;
   for (let i = 0; i < EP.n; i++) em = Math.max(em, Math.hypot(EP.ac[i*3], EP.ac[i*3+1], EP.ac[i*3+2]));
   Eref = em || 1;
@@ -715,10 +772,10 @@ function sampleFar(x, y, z, out) {
   let ax = 0, ay = 0, az = 0;
   for (const M of MOM) {
     const mx = CB*M.mc[0] + SB*M.ms[0], my = CB*M.mc[1] + SB*M.ms[1], mz = CB*M.mc[2] + SB*M.ms[2];
-    const px = x - M.cx, r2 = px*px + y*y + z*z;
+    const px = x - M.centre.x, py = y - M.centre.y, pz = z - M.centre.z, r2 = px*px + py*py + pz*pz;
     if (r2 < 1e-9) continue;
-    const r = Math.sqrt(r2), d = (mx*px + my*y + mz*z) / r2, r3 = r2 * r;
-    ax += (3*d*px - mx)/r3; ay += (3*d*y - my)/r3; az += (3*d*z - mz)/r3;
+    const r = Math.sqrt(r2), d = (mx*px + my*py + mz*pz) / r2, r3 = r2 * r;
+    ax += (3*d*px - mx)/r3; ay += (3*d*py - my)/r3; az += (3*d*pz - mz)/r3;
   }
   out[0]=ax; out[1]=ay; out[2]=az;
   return (ax*ax + ay*ay + az*az) > 1e-24;
@@ -733,7 +790,7 @@ function sampleB(x, y, z, out) {
 function stepAt(x, y, z) {
   let d2 = Infinity;
   for (let i = 0; i < CXS.length; i++) {
-    const dx = x - CXS[i], v = dx*dx + y*y + z*z;
+    const dx = x - CXS[i].x, dy = y - CXS[i].y, dz = z - CXS[i].z, v = dx*dx + dy*dy + dz*dz;
     if (v < d2) d2 = v;
   }
   return Math.min(3.0, 0.05 * Math.max(1, Math.sqrt(d2) / 1.5));
@@ -759,7 +816,7 @@ function seeds(t) {
   const seedCount = renderer.xr.isPresenting ? Math.min(S.nSeed, 15) : S.nSeed;
   const perM = Math.max(8, Math.round(seedCount / machineList(S.mode).length));
   const rings = [[0.62, 0.24], [0.78, 0.34], [0.93, 0.42]];
-  for (const M of machineList(S.mode)) {
+  machineList(S.mode).forEach((M, machineIndex) => {
     // machine B's pattern leads, lags or counter-rotates per its (sc, ss) weights
     const tb = (M.ss < 0) ? (M.sc < 0 ? t + Math.PI : -t) : (M.sc < 0 ? t + Math.PI : t);
     const bvx = -Math.sin(tb), bvy = Math.cos(tb);
@@ -767,10 +824,11 @@ function seeds(t) {
       const k = Math.max(3, Math.round(perM * frac));
       for (let i = 0; i < k; i++) {
         const a = (i + 0.5) * TAU / k, cu = u * 0.92 * Math.cos(a);
-        out.push([M.cx + cu * bvx, cu * bvy, u * 1.05 * Math.sin(a)]);
+        const p = posedPoint(M, machineIndex, cu * bvx, cu * bvy, u * 1.05 * Math.sin(a));
+        out.push([p.x, p.y, p.z]);
       }
     }
-  }
+  });
   return out;
 }
 
@@ -938,12 +996,27 @@ const scU = document.getElementById('scU'), ctxU = scU.getContext('2d');
 const PH_CSS = ['#e8544b', '#f2c14e', '#4fa3e0'];
 
 function Ufn(mode, t) {
-  const mA = [Math.cos(t), Math.sin(t)];
-  const w = { parallel: [1, 1], antiphase: [-1, -1], negseq: [1, -1] }[mode];
-  if (!w) return null;
-  const mB = [w[0] * Math.cos(t), w[1] * Math.sin(t)];
-  const BA = [2 * mA[0], -mA[1]];                      // separation along +x, normalised by D^3
-  return { U: -(mB[0] * BA[0] + mB[1] * BA[1]), Tq: mB[0] * BA[1] - mB[1] * BA[0] };
+  if (mode === 'single' || MOM.length < 2) return null;
+  const moments = MOM.map(M => new THREE.Vector3(
+    Math.cos(t)*M.mc[0] + Math.sin(t)*M.ms[0],
+    Math.cos(t)*M.mc[1] + Math.sin(t)*M.ms[1],
+    Math.cos(t)*M.mc[2] + Math.sin(t)*M.ms[2]
+  ));
+  const r = MOM[1].centre.clone().sub(MOM[0].centre);
+  const distance = Math.max(1e-5, r.length()); r.multiplyScalar(1 / distance);
+  const m0 = Math.max(1e-9, Math.hypot(MOM[0].mc[0], MOM[0].mc[1], MOM[0].mc[2]));
+  const norm = m0*m0 / (D_SEP*D_SEP*D_SEP);
+  const invr3 = 1 / (distance*distance*distance);
+  const U = (moments[0].dot(moments[1]) - 3*moments[0].dot(r)*moments[1].dot(r))*invr3 / norm;
+  const BA = r.clone().multiplyScalar(3*moments[0].dot(r)).sub(moments[0]).multiplyScalar(invr3);
+  const torque = new THREE.Vector3().crossVectors(moments[1], BA);
+  return { U, Tq: torque.z / norm };
+}
+
+function meanInteractionEnergy(mode) {
+  let sum = 0;
+  for (let i = 0; i < 72; i++) sum += Ufn(mode, i * TAU / 72).U;
+  return sum / 72;
 }
 
 function drawScopes(t) {
@@ -993,8 +1066,93 @@ function drawScopes(t) {
 let last = performance.now(), ready = false, lastFieldUpdate = -Infinity;
 let xrScale = 1;
 const xrButtons = { right: [false, false] };
+const xrControllers = [];
+const grabOwners = [null, null];
+const grabState = [null, null];
+const grabRaycaster = new THREE.Raycaster();
+const grabOrigin = new THREE.Vector3();
+const grabDirection = new THREE.Vector3();
+let recomputeTimer = 0;
 
-function resetXRPlacement() {
+function scheduleFieldRecompute() {
+  clearTimeout(recomputeTimer);
+  recomputeTimer = setTimeout(() => { recomputeTimer = 0; run(); }, 60);
+}
+
+function releaseGrab(controllerId, recompute = true) {
+  const state = grabState[controllerId];
+  if (!state) return;
+  if (state.root.parent) gMachines.attach(state.root);
+  const M = machineList(S.mode)[state.motorIndex];
+  machinePoses[state.motorIndex].position.copy(state.root.position).sub(new THREE.Vector3(M.cx, 0, 0));
+  machinePoses[state.motorIndex].quaternion.copy(state.root.quaternion).normalize();
+  endGrab(grabOwners, state.motorIndex, controllerId);
+  grabState[controllerId] = null;
+  lastFieldUpdate = -Infinity;
+  if (recompute) scheduleFieldRecompute();
+}
+
+function releaseAllGrabs() {
+  for (let i = 0; i < grabState.length; i++) releaseGrab(i, false);
+  grabOwners.fill(null);
+  for (const hit of motorHitTargets) hit.material.visible = false;
+}
+
+function pointedMotor(controller) {
+  controller.updateWorldMatrix(true, false);
+  grabOrigin.setFromMatrixPosition(controller.matrixWorld);
+  grabDirection.set(0, 0, -1).transformDirection(controller.matrixWorld);
+  grabRaycaster.set(grabOrigin, grabDirection);
+  grabRaycaster.far = 4;
+  return grabRaycaster.intersectObjects(motorHitTargets, false)[0]?.object ?? null;
+}
+
+function beginControllerGrab(controllerId) {
+  if (!ready || grabState[controllerId]) return;
+  const controller = xrControllers[controllerId];
+  const hit = pointedMotor(controller);
+  if (!hit) return;
+  const motorIndex = hit.userData.machineIndex;
+  if (!beginGrab(grabOwners, motorIndex, controllerId)) return;
+  const root = motorRoots[motorIndex];
+  controller.attach(root); // attach preserves the exact controller-to-motor offset
+  grabState[controllerId] = { motorIndex, root };
+}
+
+function updateGrabTargets() {
+  for (const hit of motorHitTargets) hit.material.visible = false;
+  for (let i = 0; i < xrControllers.length; i++) {
+    const state = grabState[i];
+    const hit = state ? motorHitTargets[state.motorIndex] : pointedMotor(xrControllers[i]);
+    if (hit) hit.material.visible = true;
+  }
+}
+
+for (let i = 0; i < 2; i++) {
+  const controller = renderer.xr.getController(i);
+  controller.userData.controllerId = i;
+  const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)
+  ]);
+  const ray = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ color: 0x33cfc0, transparent: true, opacity: 0.65 }));
+  ray.scale.z = 2.5; controller.add(ray);
+  controller.addEventListener('selectstart', () => beginControllerGrab(i));
+  controller.addEventListener('selectend', () => releaseGrab(i));
+  scene.add(controller); xrControllers.push(controller);
+}
+
+function resetXRPlacement(resetMotors = false, recompute = false) {
+  releaseAllGrabs();
+  if (resetMotors) {
+    for (let i = 0; i < motorRoots.length; i++) {
+      machinePoses[i].position.set(0, 0, 0);
+      machinePoses[i].quaternion.identity();
+      const root = motorRoots[i];
+      root.position.set(machineList(S.mode)[i].cx, 0, 0);
+      root.quaternion.identity();
+      root.scale.set(1, 1, 1);
+    }
+  }
   const fit = S.mode === 'single' ? 0.22 : 0.14;
   xrScale = 1;
   xrPlacement.position.set(0, 0.75, -1.5);
@@ -1002,6 +1160,7 @@ function resetXRPlacement() {
   xrPlacement.scale.setScalar(fit);
   // The model's bore/shaft axis is +Z; present it horizontally along world +X.
   modelRoot.rotation.set(0, HORIZONTAL_ORIENTATION, 0);
+  if (recompute && ready) scheduleFieldRecompute();
 }
 
 function setPlaying(value) {
@@ -1023,16 +1182,20 @@ function updateXRControls(dt) {
     const x = applyDeadzone(x0);
     const y = applyDeadzone(y0);
     if (source.handedness === 'left') {
-      xrScale = nextScale(xrScale, y, dt);
-      const fit = S.mode === 'single' ? 0.22 : 0.14;
-      xrPlacement.scale.setScalar(fit * xrScale);
+      if (!grabState[0] && !grabState[1]) {
+        xrScale = nextScale(xrScale, y, dt);
+        const fit = S.mode === 'single' ? 0.22 : 0.14;
+        xrPlacement.scale.setScalar(fit * xrScale);
+      }
     } else if (source.handedness === 'right') {
-      xrPlacement.rotation.y -= x * dt * 1.5;
-      xrPlacement.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, xrPlacement.rotation.x + y * dt * 1.2));
+      if (!grabState[0] && !grabState[1]) {
+        xrPlacement.rotation.y -= x * dt * 1.5;
+        xrPlacement.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, xrPlacement.rotation.x + y * dt * 1.2));
+      }
       const a = !!source.gamepad.buttons[4]?.pressed;
       const b = !!source.gamepad.buttons[5]?.pressed;
       if (pressedEdge(a, xrButtons.right[0])) setPlaying(!S.playing);
-      if (pressedEdge(b, xrButtons.right[1])) resetXRPlacement();
+      if (pressedEdge(b, xrButtons.right[1])) resetXRPlacement(true, true);
       xrButtons.right[0] = a; xrButtons.right[1] = b;
     }
   }
@@ -1044,6 +1207,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   lastFieldUpdate = -Infinity;
 });
 renderer.xr.addEventListener('sessionend', () => {
+  releaseAllGrabs();
   xrPlacement.position.set(0, 0, 0);
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(1);
@@ -1055,7 +1219,7 @@ renderer.xr.addEventListener('sessionend', () => {
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!ready) return;
-  if (renderer.xr.isPresenting) updateXRControls(dt);
+  if (renderer.xr.isPresenting) { updateGrabTargets(); updateXRControls(dt); }
   if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
 
   const c = Math.cos(S.t), s = Math.sin(S.t);
@@ -1097,7 +1261,7 @@ function frame(now) {
   document.getElementById('rIa').textContent = fmt(Math.cos(S.t));
   document.getElementById('rIb').textContent = fmt(Math.cos(S.t - TAU/3));
   document.getElementById('rIc').textContent = fmt(Math.cos(S.t - 2*TAU/3));
-  const cc = machineList(S.mode)[0].cx, Fc = fieldB(cc, 0, 0, SEG);
+  const cc = CXS[0], Fc = fieldB(cc.x, cc.y, cc.z, SEG);
   document.getElementById('rB').textContent =
     (Math.hypot(c*Fc[0]+s*Fc[3], c*Fc[1]+s*Fc[4], c*Fc[2]+s*Fc[5]) / Bref).toFixed(4) + ' pu';
   document.getElementById('rE').textContent = (epk / Eref).toFixed(3) + ' pu';
@@ -1106,7 +1270,7 @@ function frame(now) {
   if (uu) {
     document.getElementById('rU').textContent = fmt(uu.U);
     document.getElementById('rTq').textContent = fmt(uu.Tq);
-    document.getElementById('rUm').textContent = fmt({ parallel: -0.5, antiphase: 0.5, negseq: -1.5 }[S.mode]);
+    document.getElementById('rUm').textContent = fmt(meanInteractionEnergy(S.mode));
   }
   drawScopes(S.t);
   renderer.render(scene, camera);
@@ -1152,7 +1316,10 @@ document.getElementById('bView').addEventListener('click', e => {
 document.getElementById('modes').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   const m = b.dataset.m; if (m === S.mode) return;
+  clearTimeout(recomputeTimer); recomputeTimer = 0;
+  releaseAllGrabs();
   S.mode = m;
+  machinePoses = [];
   [...document.querySelectorAll('#modes button')].forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === m)));
   document.getElementById('pair').style.display = m === 'single' ? 'none' : 'block';
   document.getElementById('scopeU').style.display = m === 'single' ? 'none' : 'block';
