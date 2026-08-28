@@ -18,6 +18,12 @@ test('renderer uses the WebXR-owned animation loop', () => {
   assert.doesNotMatch(html, /requestAnimationFrame\(/);
 });
 
+test('motors default to a horizontal orientation in WebXR', () => {
+  const reset = html.match(/function resetXRPlacement\(\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(reset, /modelRoot\.rotation\.set\(0, Math\.PI \/ 2, 0\)/);
+  assert.doesNotMatch(reset, /modelRoot\.rotation\.set\(-Math\.PI \/ 2, 0, 0\)/);
+});
+
 test('vendored runtime and license are present', () => {
   for (const path of ['vendor/three.module.js', 'vendor/three.core.js', 'vendor/VRButton.js', 'vendor/THREE-LICENSE.txt']) {
     assert.ok(fs.statSync(new URL(`../${path}`, import.meta.url)).size > 0, path);
