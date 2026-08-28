@@ -182,7 +182,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
     <section>
       <div class="eyebrow">Drive</div>
       <div class="sl"><label>ωt</label><input type="range" id="sT" min="0" max="360" step="0.5" value="0"><b id="vT">0°</b></div>
-      <div class="sl"><label>speed</label><input type="range" id="sS" min="0" max="200" step="1" value="55"><b id="vS">0.55×</b></div>
+      <div class="sl"><label>speed</label><input type="range" id="sS" min="0" max="200" step="1" value="1"><b id="vS">0.01×</b></div>
       <div class="seg" style="grid-template-columns:1fr 1fr;margin-top:7px">
         <button id="bPlay" aria-pressed="true">Pause</button>
         <button id="bView">Look down bore</button>
@@ -269,7 +269,7 @@ const FLUX_RAMP = [[0.00,0x2e,0x2a,0x6b],[0.34,0x1f,0x6e,0x8c],[0.62,0x33,0xcf,0
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const S = {
-  t: 0, playing: !reduceMotion, speed: 0.55, mode: 'single',
+  t: 0, playing: !reduceMotion, speed: 0.01, mode: 'single',
   showB: true, showP: true, showE: true, showEz: false, squash: true,
   showW: true, showI: true, showR: false, showM: true, cut: true,
   nSeed: 24
@@ -373,16 +373,20 @@ const cv = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setClearColor(0x080b0f, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 renderer.localClippingEnabled = true;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
-renderer.xr.setFramebufferScaleFactor(0.8);
+renderer.xr.setFramebufferScaleFactor(0.9);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x080b0f, 0.030);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 900);
 
-scene.add(new THREE.AmbientLight(0x35505f, 0.9));
+scene.add(new THREE.HemisphereLight(0x9ec9dc, 0x071017, 0.72));
+scene.add(new THREE.AmbientLight(0x35505f, 0.55));
 const key = new THREE.DirectionalLight(0xbfd8e6, 0.95); key.position.set(4, 6, 7); scene.add(key);
 const rim = new THREE.DirectionalLight(0x33cfc0, 0.5); rim.position.set(-6, -3, -4); scene.add(rim);
 
@@ -538,10 +542,30 @@ lines.frustumCulled = false; modelRoot.add(lines);
 const partGeo = new THREE.BufferGeometry();
 partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
 partGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(46 * 10 * 3), 3));
-const parts = new THREE.Points(partGeo, new THREE.PointsMaterial({
-  size: 0.075, vertexColors: true, transparent: true, opacity: 0.95,
+// A soft circular sprite avoids the oversized white squares that PointsMaterial
+// otherwise produces in a headset. At the default XR fit, 0.014 model units is
+// just over 3 mm across; desktop gets a modestly larger, still delicate marker.
+function particleTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const glow = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+  glow.addColorStop(0, 'rgba(255,255,255,1)');
+  glow.addColorStop(0.22, 'rgba(226,255,250,.98)');
+  glow.addColorStop(0.5, 'rgba(116,238,222,.42)');
+  glow.addColorStop(1, 'rgba(51,207,192,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+const particleMaterial = new THREE.PointsMaterial({
+  size: 0.042, map: particleTexture(), alphaTest: 0.025,
+  vertexColors: true, transparent: true, opacity: 0.82,
   blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false
-}));
+});
+const parts = new THREE.Points(partGeo, particleMaterial);
 parts.frustumCulled = false; modelRoot.add(parts);
 
 const eGeo = new THREE.BufferGeometry();
@@ -971,7 +995,7 @@ const xrButtons = { right: [false, false] };
 function resetXRPlacement() {
   const fit = S.mode === 'single' ? 0.22 : 0.14;
   xrScale = 1;
-  xrPlacement.position.set(0, 1.25, -1.5);
+  xrPlacement.position.set(0, 0.75, -1.5);
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(fit);
   modelRoot.rotation.set(-Math.PI / 2, 0, 0);
@@ -1013,7 +1037,8 @@ function updateXRControls(dt) {
 
 renderer.xr.addEventListener('sessionstart', () => {
   resetXRPlacement();
-  renderer.xr.setFoveation(1);
+  particleMaterial.size = 0.014;
+  renderer.xr.setFoveation(0.75);
   lastFieldUpdate = -Infinity;
 });
 renderer.xr.addEventListener('sessionend', () => {
@@ -1021,6 +1046,7 @@ renderer.xr.addEventListener('sessionend', () => {
   xrPlacement.rotation.set(0, 0, 0);
   xrPlacement.scale.setScalar(1);
   modelRoot.rotation.set(0, 0, 0);
+  particleMaterial.size = 0.042;
   xrButtons.right.fill(false);
   applyCam();
 });
