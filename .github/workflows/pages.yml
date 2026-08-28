@@ -39,11 +39,13 @@ jobs:
         run: |
           mkdir _site
           cp rotating-field-machine.html _site/index.html
+          cp delta-wye-transformer.html _site/delta-wye-transformer.html
           build_hash="$(git rev-parse --short=7 HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          sed -i "s/__BUILD_HASH__/${build_hash}/g; s/__BUILD_TIME__/${build_time}/g" _site/index.html
+          sed -i "s/__BUILD_HASH__/${build_hash}/g; s/__BUILD_TIME__/${build_time}/g" _site/index.html _site/delta-wye-transformer.html
           cp xr-controls.js _site/xr-controls.js
           cp field-kernels.js _site/field-kernels.js
+          cp transformer-model.js _site/transformer-model.js
           cp -R vendor _site/vendor
           cp LICENSE _site/LICENSE
           touch _site/.nojekyll
