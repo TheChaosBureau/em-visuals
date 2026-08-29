@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Delta–wye transformer — 3-limb core, Φ, B and E</title>
+<style>
+:root{
+  --bg:#080b0f; --panel:#0e141b; --panel-2:#131b24; --rule:#1e2a35;
+  --ink:#cbd7e1; --ink-dim:#7d8f9d; --ink-faint:#4e5d69;
+  --accent:#33cfc0;
+  --pa:#e8544b; --pb:#f2c14e; --pc:#4fa3e0;
+  --emb:#ff9152; --vio:#9b7bff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--ink); font-size:12px; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+#stage{position:fixed;inset:0}
+canvas#gl{display:block;width:100%;height:100%}
+
+/* ---------------------------------------------------------------- panel */
+#rail{
+  position:fixed; top:0; left:0; bottom:0; width:274px; z-index:10;
+  background:linear-gradient(180deg,#0e141b 0%,#0b1017 100%);
+  border-right:1px solid var(--rule);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#rail header{padding:16px 16px 12px;border-bottom:1px solid var(--rule);flex:none}
+#rail h1{
+  font-family:system-ui,sans-serif;
+  font-weight:700; font-size:16px; letter-spacing:.01em; line-height:1.15; color:#eef4f8;
+}
+#rail h1 em{font-style:normal;color:var(--accent)}
+.sub{margin-top:5px;color:var(--ink-faint);font-size:10.5px;line-height:1.5}
+.build-info{margin-top:7px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}
+.build-info code{color:var(--ink-dim);font:inherit}
+#scroll{flex:1;overflow-y:auto;overscroll-behavior:contain}
+#scroll::-webkit-scrollbar{width:7px}
+#scroll::-webkit-scrollbar-thumb{background:#1c2731;border-radius:4px}
+section{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:system-ui,sans-serif;font-weight:600;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
+  margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline;
+}
+.eyebrow b{font-family:ui-monospace,monospace;font-weight:500;color:var(--ink-dim);letter-spacing:0}
+
+/* toggles */
+.row{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;user-select:none}
+.row:hover .lbl{color:#eef4f8}
+.box{
+  width:13px;height:13px;flex:none;border:1px solid #354553;border-radius:2.5px;
+  background:#0a1016;position:relative;transition:all .12s;
+}
+.row input{position:absolute;opacity:0;width:0;height:0}
+.row input:checked + .box{background:var(--accent);border-color:var(--accent)}
+.row input:checked + .box::after{
+  content:"";position:absolute;left:3.5px;top:1px;width:4px;height:7.5px;
+  border:solid #071014;border-width:0 2px 2px 0;transform:rotate(42deg);
+}
+.row input:focus-visible + .box{outline:2px solid var(--accent);outline-offset:2px}
+.lbl{color:var(--ink);transition:color .12s}
+.swatch{width:9px;height:9px;border-radius:50%;flex:none;margin-left:auto}
+
+/* segmented */
+.seg{display:grid;gap:3px;margin-top:2px}
+.seg button{
+  font:inherit;font-size:11px;text-align:left;padding:7px 9px;cursor:pointer;
+  background:#0a1016;color:var(--ink-dim);border:1px solid #24303b;border-radius:3px;
+  transition:all .12s;
+}
+.seg button:hover{color:var(--ink);border-color:#33434f}
+.seg button[aria-pressed="true"]{background:#10312e;color:var(--accent);border-color:#2a6b64}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* slider */
+.sl{display:flex;align-items:center;gap:10px;padding:4px 0}
+.sl label{color:var(--ink-dim);flex:none;width:44px;font-size:10.5px}
+.sl input[type=range]{flex:1;-webkit-appearance:none;background:none;height:16px;cursor:pointer}
+.sl input[type=range]::-webkit-slider-runnable-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-moz-range-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent);
+  margin-top:-4.5px;box-shadow:0 0 0 3px rgba(51,207,192,.14);
+}
+.sl input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-radius:50%;background:var(--accent)}
+.sl b{font-weight:500;color:var(--ink);width:42px;text-align:right;font-size:10.5px;flex:none}
+
+/* readouts */
+table.rd{width:100%;border-collapse:collapse;font-size:11px}
+table.rd td{padding:3px 0}
+table.rd td:first-child{color:var(--ink-dim)}
+table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:#eef4f8}
+.note{color:var(--ink-faint);font-size:10px;line-height:1.65}
+.note b{color:var(--ink-dim);font-weight:500}
+
+/* ------------------------------------------------------------ scope strip */
+#scopes{
+  position:fixed;left:290px;bottom:16px;z-index:10;display:flex;gap:10px;flex-wrap:wrap;
+  pointer-events:none;
+}
+.scope{
+  background:rgba(10,15,20,.82);border:1px solid var(--rule);border-radius:4px;
+  padding:8px 10px 6px;backdrop-filter:blur(9px);
+}
+.scope .cap{
+  font-family:system-ui,sans-serif;font-weight:600;font-size:9.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
+  display:flex;justify-content:space-between;gap:14px;margin-bottom:5px;
+}
+.scope .cap span{letter-spacing:0;font-family:ui-monospace,monospace;font-weight:500}
+.scope canvas{display:block}
+
+/* --------------------------------------------------------------- overlays */
+#hint{
+  position:fixed;right:14px;bottom:14px;z-index:10;color:var(--ink-faint);
+  font-size:10px;text-align:right;line-height:1.6;pointer-events:none;
+}
+#toggleRail{
+  position:fixed;top:12px;left:12px;z-index:20;display:none;
+  font:inherit;font-size:11px;padding:7px 11px;border-radius:3px;cursor:pointer;
+  background:rgba(14,20,27,.92);color:var(--ink);border:1px solid var(--rule);
+}
+
+@media (max-width:820px){
+  #rail{width:100%;height:56%;top:auto;bottom:0;border-right:none;border-top:1px solid var(--rule)}
+  #rail.hidden{transform:translateY(calc(100% - 0px));display:none}
+  #toggleRail{display:block}
+  #scopes{left:12px;bottom:auto;top:56px;right:12px}
+  #hint{display:none}
+  .scope canvas{width:100%;height:auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="gl"></canvas></div>
+<button id="toggleRail" aria-expanded="true">Controls</button>
+
+<aside id="rail">
+  <header>
+    <h1>Delta–wye —<br><em>3-limb transformer</em></h1>
+    <div class="sub">Ideal-core magnetic circuit + air-path Biot–Savart. Dy11. All quantities normalised.</div>
+    <div class="build-info">build <code>__BUILD_HASH__</code> · published <time datetime="__BUILD_TIME__">__BUILD_TIME__</time></div>
+    <div class="sub"><a href="./rotating-field-machine.html">also: rotating field machine →</a></div>
+  </header>
+
+  <div id="scroll">
+    <section>
+      <div class="eyebrow">Fields</div>
+      <label class="row"><input type="checkbox" id="cF" checked><span class="box"></span><span class="lbl">Core flux <b style="color:var(--ink-faint)">Φ</b> bundles</span><span class="swatch" style="background:linear-gradient(90deg,#2e2a6b,#33cfc0)"></span></label>
+      <label class="row"><input type="checkbox" id="cB"><span class="box"></span><span class="lbl">Leakage <b style="color:var(--ink-faint)">B</b> arrows</span><span class="swatch" style="background:#33cfc0"></span></label>
+      <label class="row"><input type="checkbox" id="cE"><span class="box"></span><span class="lbl">Induced <b style="color:var(--ink-faint)">E</b> arrows</span><span class="swatch" style="background:linear-gradient(90deg,#9b7bff,#ff9152)"></span></label>
+    </section>
+
+    <section>
+      <div class="eyebrow">Structure</div>
+      <label class="row"><input type="checkbox" id="cI" checked><span class="box"></span><span class="lbl">Core</span></label>
+      <label class="row"><input type="checkbox" id="cW1" checked><span class="box"></span><span class="lbl">Primary <b style="color:var(--ink-faint)">HV</b> delta</span></label>
+      <label class="row"><input type="checkbox" id="cW2" checked><span class="box"></span><span class="lbl">Secondary <b style="color:var(--ink-faint)">LV</b> wye</span></label>
+      <label class="row"><input type="checkbox" id="cJ" checked><span class="box"></span><span class="lbl">Connections</span></label>
+    </section>
+
+    <section>
+      <div class="eyebrow">Drive</div>
+      <div class="sl"><label>ωt</label><input type="range" id="sT" min="0" max="360" step="0.5" value="0"><b id="vT">0°</b></div>
+      <div class="sl"><label>speed</label><input type="range" id="sS" min="0" max="200" step="1" value="1"><b id="vS">0.01×</b></div>
+      <div class="seg" style="grid-template-columns:1fr 1fr;margin-top:7px">
+        <button id="bPlay" aria-pressed="true">Pause</button>
+        <button id="bView">Front view</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Load</div>
+      <div class="sl"><label>load</label><input type="range" id="sL" min="0" max="100" step="1" value="50"><b id="vL">50%</b></div>
+      <div class="note" style="margin-top:5px">Per-unit secondary current demand, balanced across phases. Scales the leakage-B and induced-E arrows below; core flux is load-independent.</div>
+    </section>
+
+    <section id="readout">
+      <div class="eyebrow">Readout <b id="rPh">ωt 0.0°</b></div>
+      <table class="rd">
+        <tr><td>sec/pri line V</td><td id="rRatio">—</td></tr>
+        <tr><td>shift</td><td id="rShift">—</td></tr>
+        <tr><td>i<sub>mag</sub> / i<sub>p</sub></td><td id="rImagRatio">—</td></tr>
+        <tr><td>Σφ residual</td><td id="rPhiResidual">—</td></tr>
+      </table>
+      <div class="note" style="margin-top:8px;margin-bottom:4px">per-phase secondary <b>i<sub>s</sub></b></div>
+      <table class="rd">
+        <tr><td><span style="color:var(--pa)">■</span> i<sub>s,A</sub></td><td id="rIsA">—</td></tr>
+        <tr><td><span style="color:var(--pb)">■</span> i<sub>s,B</sub></td><td id="rIsB">—</td></tr>
+        <tr><td><span style="color:var(--pc)">■</span> i<sub>s,C</sub></td><td id="rIsC">—</td></tr>
+      </table>
+      <div class="note" style="margin-top:8px;margin-bottom:4px">per-phase primary <b>i<sub>p</sub></b> (winding)</div>
+      <table class="rd">
+        <tr><td><span style="color:var(--pa)">■</span> i<sub>p,A</sub></td><td id="rIpA">—</td></tr>
+        <tr><td><span style="color:var(--pb)">■</span> i<sub>p,B</sub></td><td id="rIpB">—</td></tr>
+        <tr><td><span style="color:var(--pc)">■</span> i<sub>p,C</sub></td><td id="rIpC">—</td></tr>
+      </table>
+      <div class="note" style="margin-top:8px;margin-bottom:4px">per-phase line <b>i<sub>A</sub></b></div>
+      <table class="rd">
+        <tr><td><span style="color:var(--pa)">■</span> i<sub>A</sub></td><td id="rIlineA">—</td></tr>
+        <tr><td><span style="color:var(--pb)">■</span> i<sub>B</sub></td><td id="rIlineB">—</td></tr>
+        <tr><td><span style="color:var(--pc)">■</span> i<sub>C</sub></td><td id="rIlineC">—</td></tr>
+      </table>
+    </section>
+
+    <section>
+      <div class="eyebrow">What this model does not include</div>
+      <div class="note">
+        μ<sub>r</sub>&nbsp;→&nbsp;∞ flux confinement is imposed by the magnetic circuit, not solved. The leakage field ignores the iron boundary condition — no Rogowski correction. Windings are idealized loop stacks. No saturation, hysteresis, or inrush: steady-state sinusoidal only. No winding resistance or leakage-impedance voltage drop. Balanced load only. The delta's third-harmonic circulating-current story is out of scope.
+      </div>
+    </section>
+  </div>
+</aside>
+
+<div id="scopes">
+  <div class="scope">
+    <div class="cap">Limb fluxes <span>φ / Φ̂</span></div>
+    <canvas id="scPhi" width="330" height="76"></canvas>
+  </div>
+  <div class="scope">
+    <div class="cap">Vector group <span>Dy11 · sec leads 30°</span></div>
+    <canvas id="scVG" width="120" height="120"></canvas>
+  </div>
+</div>
+
+<div id="hint">drag orbit · shift-drag pan · scroll zoom</div>
+
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from './vendor/VRButton.js';
+import { applyDeadzone, nextScale } from './xr-controls.js';
+import { fieldB, fieldA } from './field-kernels.js';
+import { GEOM, C, toWcWs, solve, windingSegs, fluxLoopSegs, fluxBundleSpans } from './transformer-model.js';
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   Geometry and physics constants. See transformer-model.js for the magnetic
+   circuit solve and field-source segments, consumed by the field precompute
+   below.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TAU = Math.PI * 2;
+const { limbX, limbTop, rCore, rLV, rHV, windHalf } = GEOM;
+
+const PHASE_HEX = [0xe8544b, 0xf2c14e, 0x4fa3e0];
+const FLUX_RAMP = [[0.00,0x2e,0x2a,0x6b],[0.34,0x1f,0x6e,0x8c],[0.62,0x33,0xcf,0xc0],[0.85,0xa8,0xe8,0xf0],[1.00,0xdc,0xf3,0xff]];
+
+// Maps u in [0,1] to an [r,g,b] triple through FLUX_RAMP's indigo-to-white
+// stops (cloned from rotating-field-machine.html's ramp()).
+function ramp(u) {
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  for (let i = 0; i < FLUX_RAMP.length - 1; i++) {
+    const a = FLUX_RAMP[i], b = FLUX_RAMP[i + 1];
+    if (u <= b[0]) {
+      const f = (u - a[0]) / (b[0] - a[0] || 1);
+      return [(a[1] + (b[1] - a[1]) * f) / 255, (a[2] + (b[2] - a[2]) * f) / 255, (a[3] + (b[3] - a[3]) * f) / 255];
+    }
+  }
+  const z = FLUX_RAMP[FLUX_RAMP.length - 1];
+  return [z[1] / 255, z[2] / 255, z[3] / 255];
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Page state. Structure/drive fields are wired to visible behaviour on the
+// static meshes; the field-render and load fields (S.showPhi / S.showLeakB /
+// S.showE / S.load) are consumed by the flux/leakage/induced layers below,
+// while the scope canvases and full readout table are driven separately.
+const S = {
+  t: 0, playing: !reduceMotion, speed: 0.01,
+  showCore: true, showW1: true, showW2: true, showJumpers: true,
+  showPhi: true, showLeakB: false, showE: false,
+  load: 0.5
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scene
+   ═══════════════════════════════════════════════════════════════════════════ */
+const cv = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x080b0f, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+renderer.xr.setFramebufferScaleFactor(0.9);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x080b0f, 0.030);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 900);
+
+scene.add(new THREE.HemisphereLight(0x9ec9dc, 0x071017, 0.72));
+scene.add(new THREE.AmbientLight(0x35505f, 0.55));
+const key = new THREE.DirectionalLight(0xbfd8e6, 0.95); key.position.set(4, 6, 7); scene.add(key);
+const rim = new THREE.DirectionalLight(0x33cfc0, 0.5); rim.position.set(-6, -3, -4); scene.add(rim);
+
+// Desktop uses the model's native Z-up coordinates (limbs vertical along z,
+// yokes along x — see transformer-model.js). WebXR supplies a Y-up tracking
+// space, so immersive placement and orientation live in separate roots.
+const xrPlacement = new THREE.Group(); scene.add(xrPlacement);
+const modelRoot = new THREE.Group(); xrPlacement.add(modelRoot);
+// Maps the model's local +Z (limb axis) onto the XR world's +Y so the core
+// stands upright for a viewer standing on the floor, matching the desktop
+// Z-up view; local +X (limb spacing) is unaffected by a rotation about X.
+// XR-only: applied by resetXRPlacement() on sessionstart, restored to
+// identity on sessionend. Desktop keeps modelRoot at identity (native Z-up).
+const HORIZONTAL_ORIENTATION = -Math.PI / 2;
+
+// ── camera rig (hand-rolled orbit) ──────────────────────────────────────────
+const cam = { tgt: new THREE.Vector3(0, 0, 0), r: 9.5, th: 0.72, ph: 1.14 };
+function applyCam() {
+  const sp = Math.sin(cam.ph), cp = Math.cos(cam.ph);
+  camera.position.set(
+    cam.tgt.x + cam.r * sp * Math.cos(cam.th),
+    cam.tgt.y + cam.r * sp * Math.sin(cam.th),
+    cam.tgt.z + cam.r * cp);
+  camera.up.set(0, 0, 1);
+  camera.lookAt(cam.tgt);
+}
+(function orbit() {
+  let drag = null, px = 0, py = 0;
+  cv.addEventListener('pointerdown', e => {
+    drag = (e.shiftKey || e.button === 2) ? 'pan' : 'rot';
+    px = e.clientX; py = e.clientY; cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY;
+    if (drag === 'rot') {
+      cam.th -= dx * 0.006;
+      cam.ph = Math.max(0.05, Math.min(Math.PI - 0.05, cam.ph - dy * 0.006));
+    } else {
+      const rt = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+      const up = camera.up.clone().normalize();
+      cam.tgt.addScaledVector(rt, -dx * cam.r * 0.0016).addScaledVector(up, dy * cam.r * 0.0016);
+    }
+    applyCam();
+  });
+  const stop = e => { drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
+  cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.r = Math.max(2.2, Math.min(80, cam.r * Math.exp(e.deltaY * 0.0011)));
+    applyCam();
+  }, { passive: false });
+  let pd = 0;
+  cv.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pd) { cam.r = Math.max(2.2, Math.min(80, cam.r * pd / d)); applyCam(); }
+    pd = d;
+  }, { passive: true });
+  cv.addEventListener('touchend', () => pd = 0);
+})();
+
+/* ─────────────────────────────────────────────────────────── static meshes
+   Core, windings and connection jumpers never change shape after boot — the
+   circuit solve only changes colours/intensities via the field layers below,
+   so this all runs once. */
+const gCore = new THREE.Group(); modelRoot.add(gCore);
+const gW1 = new THREE.Group(); modelRoot.add(gW1);   // primary HV delta windings
+const gW2 = new THREE.Group(); modelRoot.add(gW2);   // secondary LV wye windings
+const gJumpers = new THREE.Group(); modelRoot.add(gJumpers);
+
+function tubeZ(r, h, mat) {
+  const g = new THREE.CylinderGeometry(r, r, h, 32, 1, false);
+  const m = new THREE.Mesh(g, mat); m.rotation.x = Math.PI / 2; return m;
+}
+function tubeX(r, h, mat) {
+  const g = new THREE.CylinderGeometry(r, r, h, 32, 1, false);
+  const m = new THREE.Mesh(g, mat); m.rotation.z = Math.PI / 2; return m;
+}
+
+// A thin schematic tube along an explicit point list (jumpers, neutral leads).
+function pathTube(points, radius, mat, segs = 48) {
+  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)), false, 'catmullrom', 0.2);
+  const g = new THREE.TubeGeometry(curve, segs, radius, 6, false);
+  return new THREE.Mesh(g, mat);
+}
+
+// A helical-look winding: a smooth tube tracing turns loops of radius r on
+// limb k, spanning z in [-windHalf, +windHalf]. Purely visual — the field
+// solve uses the discrete loop stack from windingSegs() instead.
+function windingCurvePoints(cx, r, turns) {
+  const perTurn = 10;
+  const total = turns * perTurn;
+  const pts = [];
+  for (let i = 0; i <= total; i++) {
+    const t = i / total;
+    const z = -windHalf + 2 * windHalf * t;
+    const theta = t * turns * TAU;
+    pts.push([cx + r * Math.cos(theta), r * Math.sin(theta), z]);
+  }
+  return pts;
+}
+function windingMesh(cx, r, hex, dim) {
+  const base = new THREE.Color(hex);
+  if (dim) base.multiplyScalar(0.5);
+  const mat = new THREE.MeshStandardMaterial({
+    color: base.clone().multiplyScalar(0.24), emissive: base, emissiveIntensity: 0.3,
+    metalness: 0.35, roughness: 0.45
+  });
+  return pathTube(windingCurvePoints(cx, r, GEOM.nLoops), 0.05, mat, GEOM.nLoops * 10);
+}
+
+function buildMeshes() {
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x35434f, metalness: 0.55, roughness: 0.62, transparent: true, opacity: 0.35,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+
+  // core: 3 vertical limbs + top/bottom yokes
+  for (const x of limbX) {
+    const limb = tubeZ(rCore, 2 * limbTop, ironMat);
+    limb.position.set(x, 0, 0);
+    gCore.add(limb);
+  }
+  const yokeLen = (limbX[2] - limbX[0]) + 2 * rCore;
+  for (const z of [limbTop, -limbTop]) {
+    const yoke = tubeX(rCore, yokeLen, ironMat);
+    yoke.position.set((limbX[0] + limbX[2]) / 2, 0, z);
+    gCore.add(yoke);
+  }
+
+  // windings: HV (primary, delta) outside, LV (secondary, wye) inside
+  for (let k = 0; k < 3; k++) {
+    gW1.add(windingMesh(limbX[k], rHV, PHASE_HEX[k], false));
+    gW2.add(windingMesh(limbX[k], rLV, PHASE_HEX[k], true));
+  }
+
+  // jumpers: thin, schematic, --ink-dim gray
+  const jumperMat = new THREE.MeshStandardMaterial({
+    color: 0x7d8f9d, metalness: 0.2, roughness: 0.6
+  });
+
+  // delta: winding-top of limb k to winding-bottom of limb (k+1)%3, routed
+  // up and over the top yoke (A-B, B-C, C-A per transformer-model.js).
+  const yOff = rHV + 0.35;
+  for (let k = 0; k < 3; k++) {
+    const kn = (k + 1) % 3;
+    const apexZ = limbTop + 0.5;
+    const pts = [
+      [limbX[k], yOff, windHalf],
+      [limbX[k], yOff, apexZ],
+      [(limbX[k] + limbX[kn]) / 2, yOff, apexZ],
+      [limbX[kn], yOff, limbTop + 0.15],
+      [limbX[kn], yOff, -windHalf]
+    ];
+    gJumpers.add(pathTube(pts, 0.02, jumperMat, 64));
+  }
+
+  // wye: neutral bar under the center limb, LV-bottom leads down to it.
+  const barZ = -(windHalf + limbTop) / 2;
+  const bar = tubeX(0.035, 0.6, jumperMat);
+  bar.position.set(0, 0, barZ);
+  gJumpers.add(bar);
+  for (let k = 0; k < 3; k++) {
+    const pts = [
+      [limbX[k], rLV, -windHalf],
+      [limbX[k] * 0.4, rLV * 0.5, (barZ + -windHalf) / 2],
+      [0, 0, barZ]
+    ];
+    gJumpers.add(pathTube(pts, 0.02, jumperMat, 32));
+  }
+}
+buildMeshes();
+
+/* ──────────────────────────────────────────────────────── field precompute
+   Precompute (once, synchronous — well under a video frame): the full-load
+   circuit solve and its two field-source segment sets, the B/E probe grids,
+   and the fixed Bref/Eref normalization constants. Field-line/bundle
+   geometry (fluxBundleSpans, windingSegs, fluxLoopSegs) and the Biot–Savart
+   kernels (fieldB, fieldA) are consumed here, driven by solve(1) — PHI is
+   load-independent so the flux-bundle phasors need no re-solve; only the
+   per-frame B/E blend below reads S.load. Nothing here runs again after
+   boot: no recompute on the load or time sliders. */
+
+// -- B probes: y=0 mid-plane grid, skipping points inside the core iron or
+// the winding annuli (checked in x-z only, since every probe has y=0). ----
+const B_STEP = 0.22, B_XMAX = 3.4, B_ZMAX = 2.2, IRON_MARGIN = 0.05;
+function nearIron(x, z) {
+  for (const lx of limbX) {
+    if (Math.abs(x - lx) < rCore + IRON_MARGIN && Math.abs(z) < limbTop + IRON_MARGIN) return true;
+  }
+  for (const zy of [limbTop, -limbTop]) {
+    if (Math.abs(z - zy) < rCore + IRON_MARGIN &&
+        x > limbX[0] - rCore - IRON_MARGIN && x < limbX[2] + rCore + IRON_MARGIN) return true;
+  }
+  return false;
+}
+// Excludes everything within rHV + margin of a limb axis, which also covers
+// the LV-HV gap annulus (rLV to rHV) between the two windings. That gap's
+// |B| runs ~5-7x the exterior max, so sampling it would inflate Bref and
+// crush every exterior arrow toward zero on the shared scale — omitting it
+// is a deliberate visual tradeoff, not an oversight.
+function nearWinding(x, z) {
+  for (const lx of limbX) {
+    if (Math.abs(x - lx) < rHV + IRON_MARGIN && Math.abs(z) < windHalf + IRON_MARGIN) return true;
+  }
+  return false;
+}
+function bProbePoints() {
+  const pts = [];
+  for (let x = -B_XMAX; x <= B_XMAX + 1e-9; x += B_STEP) {
+    for (let z = -B_ZMAX; z <= B_ZMAX + 1e-9; z += B_STEP) {
+      if (nearIron(x, z) || nearWinding(x, z)) continue;
+      pts.push([x, 0, z]);
+    }
+  }
+  return pts;
+}
+
+// -- E probes: rings of 16 around each limb, 5 z-levels, tagged with the
+// owning limb index for the per-probe azimuthal-sense color test. ---------
+const E_RING_N = 16, E_RADIUS = 0.72, E_ZS = [-0.9, -0.45, 0, 0.45, 0.9];
+function eProbePoints() {
+  const pts = [];
+  for (let k = 0; k < 3; k++) {
+    for (let i = 0; i < E_RING_N; i++) {
+      const th = i * TAU / E_RING_N;
+      const dx = E_RADIUS * Math.cos(th), dy = E_RADIUS * Math.sin(th);
+      for (const z of E_ZS) pts.push({ x: limbX[k] + dx, y: dy, z, k });
+    }
+  }
+  return pts;
+}
+
+// -- Flux-bundle strand offsets: one centre strand + 6 around a hex ring,
+// expressed in the (in-plane-perpendicular, y) basis built per span below. -
+const STRANDS = 7, STRAND_R = rCore * 0.55;
+const STRAND_OFFSETS = Array.from({ length: STRANDS }, (_, i) =>
+  i === 0 ? [0, 0] : [Math.cos((i - 1) * TAU / (STRANDS - 1)), Math.sin((i - 1) * TAU / (STRANDS - 1))]);
+
+let BP = null, EP = null, FLUX_SPANS = [], Bref = 1, Eref = 1, PhiMax = 1;
+// Induced-E display scale, set alongside Eref inside the precompute step
+// below so it can never be evaluated before Eref is known regardless of
+// statement order.
+let E_ARROW_SCALE = 0.42;
+let gFlux, gBArrows, gEArrows;
+
+// Load-independent phasor caches for the scope canvases and the fixed
+// readout rows (ratio/shift/Σφ residual) — filled from SOL1 inside the
+// precompute function below and never touched again: PHI, Up and secondary
+// line-line Vs don't depend on load (see solve()).
+let PHI_WCWS = [[0,0],[0,0],[0,0]], VG_UP = [[0,0],[0,0],[0,0]], VG_VS_LL = [[0,0],[0,0],[0,0]];
+
+function precompute() {
+  const SOL1 = solve(1);
+  const SEGW = windingSegs(SOL1);
+  const SEGF = fluxLoopSegs(SOL1);
+
+  const bPts = bProbePoints();
+  BP = { p: new Float32Array(bPts.length * 3), bc: new Float32Array(bPts.length * 3), bs: new Float32Array(bPts.length * 3), n: bPts.length };
+  for (let i = 0; i < bPts.length; i++) {
+    const [x, y, z] = bPts[i];
+    const F = fieldB(x, y, z, SEGW);
+    BP.p[i*3] = x; BP.p[i*3+1] = y; BP.p[i*3+2] = z;
+    BP.bc[i*3] = F[0]; BP.bc[i*3+1] = F[1]; BP.bc[i*3+2] = F[2];
+    BP.bs[i*3] = F[3]; BP.bs[i*3+1] = F[4]; BP.bs[i*3+2] = F[5];
+  }
+
+  const ePts = eProbePoints();
+  EP = {
+    p: new Float32Array(ePts.length * 3), k: new Int8Array(ePts.length),
+    awc: new Float32Array(ePts.length * 3), aws: new Float32Array(ePts.length * 3),
+    acc: new Float32Array(ePts.length * 3), acs: new Float32Array(ePts.length * 3),
+    n: ePts.length
+  };
+  for (let i = 0; i < ePts.length; i++) {
+    const { x, y, z, k } = ePts[i];
+    const Fw = fieldA(x, y, z, SEGW);   // winding part — load-scaled at display time
+    const Fc = fieldB(x, y, z, SEGF);   // core part (flux-tube duality) — load-independent
+    EP.p[i*3] = x; EP.p[i*3+1] = y; EP.p[i*3+2] = z; EP.k[i] = k;
+    EP.awc[i*3] = Fw[0]; EP.awc[i*3+1] = Fw[1]; EP.awc[i*3+2] = Fw[2];
+    EP.aws[i*3] = Fw[3]; EP.aws[i*3+1] = Fw[4]; EP.aws[i*3+2] = Fw[5];
+    EP.acc[i*3] = Fc[0]; EP.acc[i*3+1] = Fc[1]; EP.acc[i*3+2] = Fc[2];
+    EP.acs[i*3] = Fc[3]; EP.acs[i*3+1] = Fc[4]; EP.acs[i*3+2] = Fc[5];
+  }
+
+  // Bref: |B| at full load, t=0 (c=1, s=0 -> B = Bc) — a fixed constant so
+  // the load slider visibly grows/shrinks the leakage arrows against it.
+  let bm = 0;
+  for (let i = 0; i < BP.n; i++) bm = Math.max(bm, Math.hypot(BP.bc[i*3], BP.bc[i*3+1], BP.bc[i*3+2]));
+  Bref = bm || 1;
+
+  // Eref: |E| at no load, t=0 (core part only: E(0) = -Acs) — fixed, guards
+  // divide-by-zero downstream.
+  let em = 0;
+  for (let i = 0; i < EP.n; i++) em = Math.max(em, Math.hypot(EP.acs[i*3], EP.acs[i*3+1], EP.acs[i*3+2]));
+  Eref = em || 1;
+  E_ARROW_SCALE = 0.42 / Eref;
+
+  // Flux-bundle spans: precompute each span's basis (direction, in-plane
+  // perpendicular) and its (wc, ws) flux phasor — PHI is load-independent,
+  // so this never needs to be touched again after boot.
+  PhiMax = C.abs(SOL1.PHI[0]) || 1;
+  PHI_WCWS = SOL1.PHI.map(toWcWs);
+  VG_UP = SOL1.Up;
+  VG_VS_LL = [0, 1, 2].map(k => C.sub(SOL1.Vs[k], SOL1.Vs[(k + 1) % 3]));
+  document.getElementById('rPhiResidual').textContent =
+    C.abs(SOL1.PHI.reduce((a, p) => C.add(a, p), [0, 0])).toFixed(3);
+  FLUX_SPANS = fluxBundleSpans().map(sp => {
+    const from3 = [sp.from[0], 0, sp.from[1]], to3 = [sp.to[0], 0, sp.to[1]];
+    let dx = to3[0] - from3[0], dz = to3[2] - from3[2];
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    const [wc, ws] = toWcWs(sp.phasorOf(SOL1));
+    return { from3, to3, dir: [dx, 0, dz], perp: [dz, -dx], wc, ws };
+  });
+}
+
+function buildFieldGeometry() {
+  // Flux bundles: each strand contributes a 2-vertex line plus a 6-vertex
+  // arrowhead (shaft + two head strokes).
+  const nFluxVerts = FLUX_SPANS.length * STRANDS * 8;
+  const fluxGeo = new THREE.BufferGeometry();
+  fluxGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nFluxVerts * 3), 3));
+  fluxGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nFluxVerts * 3), 3));
+  gFlux = new THREE.LineSegments(fluxGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gFlux.frustumCulled = false; modelRoot.add(gFlux);
+
+  // Leakage-B and induced-E arrows: each probe contributes a 6-vertex arrow
+  // (shaft + two head strokes), buffers sized once to the probe counts above.
+  const bGeo = new THREE.BufferGeometry();
+  bGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BP.n * 6 * 3), 3));
+  bGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(BP.n * 6 * 3), 3));
+  gBArrows = new THREE.LineSegments(bGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gBArrows.frustumCulled = false; modelRoot.add(gBArrows);
+
+  const eGeo = new THREE.BufferGeometry();
+  eGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(EP.n * 6 * 3), 3));
+  eGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(EP.n * 6 * 3), 3));
+  gEArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false
+  }));
+  gEArrows.frustumCulled = false; modelRoot.add(gEArrows);
+}
+
+precompute();
+buildFieldGeometry();
+
+// Arrow construction cloned from updateParticles: a tail-to-tip shaft
+// straddling the given centre, plus two head strokes flared from a point H
+// behind the tip. Used for the flux-bundle mid-span direction arrowheads.
+function emitCenteredArrow(pos, col, vi, cx, cy, cz, dx, dy, dz, L, H, rgb) {
+  const tailx = cx - dx*L/2, taily = cy - dy*L/2, tailz = cz - dz*L/2;
+  const tipx  = cx + dx*L/2, tipy  = cy + dy*L/2, tipz  = cz + dz*L/2;
+  let ux = -dy, uy = dx, uz = 0, um = Math.hypot(ux, uy, uz);
+  if (um < 0.1) { ux = 0; uy = -dz; uz = dy; um = Math.hypot(ux, uy, uz); }
+  ux /= um; uy /= um; uz /= um;
+  const basex = tipx - dx*H, basey = tipy - dy*H, basez = tipz - dz*H;
+  const put = (x, y, z) => {
+    pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
+    col[vi*3] = rgb[0]; col[vi*3+1] = rgb[1]; col[vi*3+2] = rgb[2]; vi++;
+  };
+  put(tailx, taily, tailz); put(tipx, tipy, tipz);
+  put(tipx, tipy, tipz); put(basex + ux*H*0.55, basey + uy*H*0.55, basez + uz*H*0.55);
+  put(tipx, tipy, tipz); put(basex - ux*H*0.55, basey - uy*H*0.55, basez - uz*H*0.55);
+  return vi;
+}
+
+// Arrow construction cloned from updateE: a shaft from the field point out
+// to the tip, plus two head strokes flared 0.3*L behind the tip, all drawn
+// at brightness b. Used for the B/E probe arrows.
+function emitFieldArrow(pos, col, vi, ox, oy, oz, dx, dy, dz, L, rgb, b) {
+  const tipx = ox + dx*L, tipy = oy + dy*L, tipz = oz + dz*L;
+  let ux = -dy, uy = dx, uz = 0, um = Math.hypot(ux, uy, uz);
+  if (um < 0.1) { ux = 0; uy = -dz; uz = dy; um = Math.hypot(ux, uy, uz); }
+  ux /= um; uy /= um; uz /= um;
+  const backx = tipx - dx*0.3*L, backy = tipy - dy*0.3*L, backz = tipz - dz*0.3*L;
+  const put = (x, y, z, f) => {
+    pos[vi*3] = x; pos[vi*3+1] = y; pos[vi*3+2] = z;
+    col[vi*3] = rgb[0]*f; col[vi*3+1] = rgb[1]*f; col[vi*3+2] = rgb[2]*f; vi++;
+  };
+  put(ox, oy, oz, b*0.22); put(tipx, tipy, tipz, b);
+  put(tipx, tipy, tipz, b); put(backx + ux*0.14*L, backy + uy*0.14*L, backz + uz*0.14*L, b);
+  put(tipx, tipy, tipz, b); put(backx - ux*0.14*L, backy - uy*0.14*L, backz - uz*0.14*L, b);
+  return vi;
+}
+
+// Core-flux bundles: 7 strands per span, colored by |phi(t)|/Phimax through
+// FLUX_RAMP, each with a mid-span arrowhead that flips with sign(phi(t)).
+// PHI is load-independent, so this reads only S.t (via c, s) — never S.load.
+const FLUX_ARROW_L = rCore * 1.15, FLUX_ARROW_H = rCore * 0.5;
+function updateFlux(c, s) {
+  const pos = gFlux.geometry.attributes.position.array, col = gFlux.geometry.attributes.color.array;
+  let vi = 0;
+  for (const sp of FLUX_SPANS) {
+    const phi = sp.wc*c + sp.ws*s;
+    const rgb = ramp(Math.abs(phi) / PhiMax);
+    const sgn = phi >= 0 ? 1 : -1;
+    for (const [op, oy] of STRAND_OFFSETS) {
+      const ox = sp.perp[0]*op*STRAND_R, oz = sp.perp[1]*op*STRAND_R, oyy = oy*STRAND_R;
+      const ax = sp.from3[0]+ox, ay = oyy, az = sp.from3[2]+oz;
+      const bx = sp.to3[0]+ox,   by = oyy, bz = sp.to3[2]+oz;
+      pos[vi*3]=ax; pos[vi*3+1]=ay; pos[vi*3+2]=az; col[vi*3]=rgb[0]; col[vi*3+1]=rgb[1]; col[vi*3+2]=rgb[2]; vi++;
+      pos[vi*3]=bx; pos[vi*3+1]=by; pos[vi*3+2]=bz; col[vi*3]=rgb[0]; col[vi*3+1]=rgb[1]; col[vi*3+2]=rgb[2]; vi++;
+      vi = emitCenteredArrow(pos, col, vi, (ax+bx)/2, (ay+by)/2, (az+bz)/2,
+        sp.dir[0]*sgn, sp.dir[1]*sgn, sp.dir[2]*sgn, FLUX_ARROW_L, FLUX_ARROW_H, rgb);
+    }
+  }
+  gFlux.geometry.setDrawRange(0, vi);
+  gFlux.geometry.attributes.position.needsUpdate = true;
+  gFlux.geometry.attributes.color.needsUpdate = true;
+}
+
+// Leakage-B arrows: B(t) = load * (c*Bc + s*Bs) — linear in load because
+// balanced resistive Is scales uniformly with it. At load=0 every arrow's
+// magnitude is exactly 0, so nothing is drawn.
+const B_ARROW_L = 0.32;
+function updateBArrows(c, s, load) {
+  const pos = gBArrows.geometry.attributes.position.array, col = gBArrows.geometry.attributes.color.array;
+  let vi = 0;
+  for (let i = 0; i < BP.n; i++) {
+    const bx = load*(c*BP.bc[i*3]   + s*BP.bs[i*3]);
+    const by = load*(c*BP.bc[i*3+1] + s*BP.bs[i*3+1]);
+    const bz = load*(c*BP.bc[i*3+2] + s*BP.bs[i*3+2]);
+    const mag = Math.hypot(bx, by, bz);
+    if (mag < 1e-9) continue;
+    const ratio = Math.min(1, mag / Bref);
+    vi = emitFieldArrow(pos, col, vi, BP.p[i*3], BP.p[i*3+1], BP.p[i*3+2],
+      bx/mag, by/mag, bz/mag, ratio * B_ARROW_L, ramp(ratio), Math.min(1, 0.3 + 0.8*ratio));
+  }
+  gBArrows.geometry.setDrawRange(0, vi);
+  gBArrows.geometry.attributes.position.needsUpdate = true;
+  gBArrows.geometry.attributes.color.needsUpdate = true;
+}
+
+// Induced-E arrows: E(t) = omega*[s*(load*Awc + Acc) - c*(load*Aws + Acs)],
+// omega = 1 (normalized).
+// Load multiplies ONLY the winding part (Awc/Aws) — the core part (Acc/Acs)
+// is fixed, so E is nonzero even at load=0. Two-tone by the sign of
+// E . (azimuthal unit vector around the probe's own limb axis).
+const EMB_RGB = [1.0, 0.57, 0.32], VIO_RGB = [0.61, 0.48, 1.0];
+function updateEArrows(c, s, load) {
+  const pos = gEArrows.geometry.attributes.position.array, col = gEArrows.geometry.attributes.color.array;
+  let vi = 0;
+  for (let i = 0; i < EP.n; i++) {
+    const cx = load*EP.awc[i*3]   + EP.acc[i*3],   sx = load*EP.aws[i*3]   + EP.acs[i*3];
+    const cy = load*EP.awc[i*3+1] + EP.acc[i*3+1], sy = load*EP.aws[i*3+1] + EP.acs[i*3+1];
+    const cz = load*EP.awc[i*3+2] + EP.acc[i*3+2], sz = load*EP.aws[i*3+2] + EP.acs[i*3+2];
+    const ex = s*cx - c*sx, ey = s*cy - c*sy, ez = s*cz - c*sz;
+    const mag = Math.hypot(ex, ey, ez);
+    if (mag < 1e-9) continue;
+    const px = EP.p[i*3], py = EP.p[i*3+1], pz = EP.p[i*3+2];
+    const lx = limbX[EP.k[i]];
+    // u = normalize(cross([0,0,1], [px-lx, py, 0])) = [-py, px-lx, 0]; only
+    // the sign of E . u is used, so u need not be normalized here.
+    const dot = ex*(-py) + ey*(px - lx);
+    const rgb = dot >= 0 ? EMB_RGB : VIO_RGB;
+    const b = Math.min(1, 0.24 + 0.9*mag/Eref);
+    vi = emitFieldArrow(pos, col, vi, px, py, pz, ex/mag, ey/mag, ez/mag, mag * E_ARROW_SCALE, rgb, b);
+  }
+  gEArrows.geometry.setDrawRange(0, vi);
+  gEArrows.geometry.attributes.position.needsUpdate = true;
+  gEArrows.geometry.attributes.color.needsUpdate = true;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WebXR — view-only: placement (position/rotate/scale via the right/left
+   thumbsticks) only, no grab/raycasting/motor roots.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let xrScale = 1;
+function resetXRPlacement() {
+  xrScale = 1;
+  xrPlacement.position.set(0, 1.2, -2.2);
+  xrPlacement.rotation.set(0, 0, 0);
+  xrPlacement.scale.setScalar(0.55);
+  modelRoot.rotation.set(HORIZONTAL_ORIENTATION, 0, 0);
+}
+
+function updateXRControls(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const axes = source.gamepad.axes;
+    const [x0, y0] = axes.length >= 4 ? [axes[2], axes[3]] : [axes[0] || 0, axes[1] || 0];
+    const x = applyDeadzone(x0);
+    const y = applyDeadzone(y0);
+    if (source.handedness === 'left') {
+      xrScale = nextScale(xrScale, y, dt);
+      xrPlacement.scale.setScalar(0.55 * xrScale);
+    } else if (source.handedness === 'right') {
+      xrPlacement.rotation.y -= x * dt * 1.5;
+      xrPlacement.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, xrPlacement.rotation.x + y * dt * 1.2));
+    }
+  }
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+  resetXRPlacement();
+  renderer.xr.setFoveation(0.75);
+});
+renderer.xr.addEventListener('sessionend', () => {
+  xrPlacement.position.set(0, 0, 0);
+  xrPlacement.rotation.set(0, 0, 0);
+  xrPlacement.scale.setScalar(1);
+  modelRoot.rotation.set(0, 0, 0); // back to desktop's native Z-up orientation
+  applyCam();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scopes + readouts — cloned from rotating-field-machine.html's drawScopes
+   idiom (clearRect, CSS-matching hex strokes, moving cursor + phase dots).
+   ═══════════════════════════════════════════════════════════════════════════ */
+const scPhi = document.getElementById('scPhi'), ctxPhi = scPhi.getContext('2d');
+const scVG = document.getElementById('scVG'), ctxVG = scVG.getContext('2d');
+const PH_CSS = ['#e8544b', '#f2c14e', '#4fa3e0'];
+const VG_GRAY = '#4e5d69';
+const VG_LABEL = ['A', 'B', 'C'];
+
+// Signed 3-decimal formatter for instantaneous current readouts, cloned
+// from rotating-field-machine.html's `fmt`.
+const fmt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(3);
+
+// Per-load phasor caches (Is/Ip/IlineP scale with load) — recomputed only
+// on a load-slider change, never per frame; per-frame readouts just replay
+// wc*cos(t)+ws*sin(t) against whichever of these is current.
+let LOAD_IS_WCWS = [[0,0],[0,0],[0,0]], LOAD_IP_WCWS = [[0,0],[0,0],[0,0]], LOAD_ILINE_WCWS = [[0,0],[0,0],[0,0]];
+
+function recomputeLoad() {
+  const sol = solve(S.load);
+  LOAD_IS_WCWS = sol.Is.map(toWcWs);
+  LOAD_IP_WCWS = sol.Ip.map(toWcWs);
+  LOAD_ILINE_WCWS = sol.IlineP.map(toWcWs);
+  // ratios.lineLine/angleDeg are load-independent in this model (Vs is the
+  // induced EMF, not a load-drop quantity) — recomputed here anyway to stay
+  // co-located with their solve() source rather than special-cased away.
+  document.getElementById('rRatio').textContent = sol.ratios.lineLine.toFixed(3);
+  document.getElementById('rShift').textContent =
+    (sol.ratios.angleDeg >= 0 ? '+' : '−') + Math.abs(sol.ratios.angleDeg).toFixed(1) + '°';
+  // Ip[0] is never zero (Imag alone already makes it nonzero at load 0), so
+  // this ratio needs no divide-by-zero guard — it naturally reads 1.0 there.
+  document.getElementById('rImagRatio').textContent =
+    (C.abs(sol.Imag[0]) / C.abs(sol.Ip[0])).toFixed(3);
+}
+
+// Limb-flux scope: three sinusoids over two periods, from each limb's
+// wc/ws phasor (load-independent), normalized to Phihat = PhiMax = |PHI[0]|.
+function drawScopePhi(t) {
+  const W = scPhi.width, H = scPhi.height, m = 6;
+  ctxPhi.clearRect(0, 0, W, H);
+  ctxPhi.strokeStyle = '#1a242e'; ctxPhi.lineWidth = 1;
+  ctxPhi.beginPath(); ctxPhi.moveTo(0, H / 2); ctxPhi.lineTo(W, H / 2); ctxPhi.stroke();
+  for (let k = 0; k < 3; k++) {
+    const [wc, ws] = PHI_WCWS[k];
+    ctxPhi.strokeStyle = PH_CSS[k]; ctxPhi.lineWidth = 1.4; ctxPhi.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const a = (x / W) * 2 * TAU;
+      const y = H / 2 - (wc * Math.cos(a) + ws * Math.sin(a)) / PhiMax * (H / 2 - m);
+      x ? ctxPhi.lineTo(x, y) : ctxPhi.moveTo(x, y);
+    }
+    ctxPhi.stroke();
+  }
+  const cx = ((t % TAU) / (2 * TAU)) * W;
+  ctxPhi.strokeStyle = 'rgba(51,207,192,.85)'; ctxPhi.lineWidth = 1;
+  ctxPhi.beginPath(); ctxPhi.moveTo(cx, 0); ctxPhi.lineTo(cx, H); ctxPhi.stroke();
+  for (let k = 0; k < 3; k++) {
+    const [wc, ws] = PHI_WCWS[k];
+    const y = H / 2 - (wc * Math.cos(t) + ws * Math.sin(t)) / PhiMax * (H / 2 - m);
+    ctxPhi.fillStyle = PH_CSS[k]; ctxPhi.beginPath(); ctxPhi.arc(cx, y, 2.6, 0, TAU); ctxPhi.fill();
+  }
+}
+
+// Vector-group scope: 6 phasors from center, each drawn at arg(phasor)+t so
+// the whole star co-rotates — the fixed 30° lead between a primary spoke and
+// its same-phase secondary spoke stays visually constant at any ωt or speed.
+// Canvas y is down, so screen angle uses y = cy - L*sin(theta) (both sets)
+// to keep the mapping consistent and the lead direction legible.
+function drawVectorGroup(t) {
+  const W = scVG.width, H = scVG.height, cx = W / 2, cy = H / 2;
+  ctxVG.clearRect(0, 0, W, H);
+  const Rmax = Math.min(cx, cy) - 8;
+  const maxAbs = Math.max(...VG_UP.map(C.abs), ...VG_VS_LL.map(C.abs)) || 1;
+  const scale = Rmax / maxAbs;
+
+  function spoke(ph, css) {
+    const ang = C.arg(ph) + t, L = C.abs(ph) * scale;
+    const x = cx + L * Math.cos(ang), y = cy - L * Math.sin(ang);
+    ctxVG.strokeStyle = css; ctxVG.lineWidth = 1.3;
+    ctxVG.beginPath(); ctxVG.moveTo(cx, cy); ctxVG.lineTo(x, y); ctxVG.stroke();
+    return [x, y];
+  }
+  for (let k = 0; k < 3; k++) {
+    const [x, y] = spoke(VG_UP[k], VG_GRAY);
+    ctxVG.fillStyle = VG_GRAY; ctxVG.font = '8px ui-monospace, monospace';
+    ctxVG.fillText(VG_LABEL[k], x + (x >= cx ? 2 : -8), y + (y >= cy ? 8 : -2));
+  }
+  for (let k = 0; k < 3; k++) spoke(VG_VS_LL[k], PH_CSS[k]);
+  ctxVG.fillStyle = '#33434f';
+  ctxVG.beginPath(); ctxVG.arc(cx, cy, 1.6, 0, TAU); ctxVG.fill();
+}
+
+const RID_IS = ['rIsA', 'rIsB', 'rIsC'], RID_IP = ['rIpA', 'rIpB', 'rIpC'], RID_ILINE = ['rIlineA', 'rIlineB', 'rIlineC'];
+function updateReadouts(c, s) {
+  for (let k = 0; k < 3; k++) {
+    document.getElementById(RID_IS[k]).textContent = fmt(LOAD_IS_WCWS[k][0] * c + LOAD_IS_WCWS[k][1] * s);
+    document.getElementById(RID_IP[k]).textContent = fmt(LOAD_IP_WCWS[k][0] * c + LOAD_IP_WCWS[k][1] * s);
+    document.getElementById(RID_ILINE[k]).textContent = fmt(LOAD_ILINE_WCWS[k][0] * c + LOAD_ILINE_WCWS[k][1] * s);
+  }
+}
+recomputeLoad();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Frame — advance ωt, apply structure toggles, blend/redraw the visible
+   field layers from the precompute above, redraw the scopes and readout
+   table, render.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let last = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (renderer.xr.isPresenting) updateXRControls(dt);
+  if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
+
+  gCore.visible = S.showCore;
+  gW1.visible = S.showW1;
+  gW2.visible = S.showW2;
+  gJumpers.visible = S.showJumpers;
+
+  gFlux.visible = S.showPhi;
+  gBArrows.visible = S.showLeakB;
+  gEArrows.visible = S.showE;
+  const c = Math.cos(S.t), s = Math.sin(S.t);
+  if (S.showPhi) updateFlux(c, s);
+  if (S.showLeakB) updateBArrows(c, s, S.load);
+  if (S.showE) updateEArrows(c, s, S.load);
+
+  document.getElementById('rPh').textContent = 'ωt ' + (S.t * 180 / Math.PI).toFixed(1) + '°';
+  drawScopePhi(S.t);
+  drawVectorGroup(S.t);
+  updateReadouts(c, s);
+
+  renderer.render(scene, camera);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+function bindBox(id, key) {
+  const el = document.getElementById(id);
+  el.checked = S[key];
+  el.addEventListener('change', () => S[key] = el.checked);
+}
+bindBox('cI', 'showCore'); bindBox('cW1', 'showW1'); bindBox('cW2', 'showW2'); bindBox('cJ', 'showJumpers');
+// cF/cB/cE (field render toggles) drive gFlux/gBArrows/gEArrows visibility
+// in frame(); sL drives S.load, read by the B/E blend each frame.
+bindBox('cF', 'showPhi'); bindBox('cB', 'showLeakB'); bindBox('cE', 'showE');
+
+const sT = document.getElementById('sT'), vT = document.getElementById('vT');
+sT.addEventListener('input', () => { S.t = +sT.value * Math.PI / 180; vT.textContent = sT.value + '°'; });
+function syncPhaseUI() {
+  const d = S.t * 180 / Math.PI;
+  sT.value = d.toFixed(1); vT.textContent = d.toFixed(0) + '°';
+}
+
+const sS = document.getElementById('sS'), vS = document.getElementById('vS');
+sS.addEventListener('input', () => { S.speed = +sS.value / 100; vS.textContent = S.speed.toFixed(2) + '×'; });
+
+const sL = document.getElementById('sL'), vL = document.getElementById('vL');
+sL.addEventListener('input', () => { S.load = +sL.value / 100; vL.textContent = sL.value + '%'; recomputeLoad(); });
+
+function setPlaying(value) {
+  S.playing = value;
+  bPlay.textContent = value ? 'Pause' : 'Play';
+  bPlay.setAttribute('aria-pressed', String(value));
+}
+const bPlay = document.getElementById('bPlay');
+setPlaying(S.playing);
+bPlay.addEventListener('click', () => setPlaying(!S.playing));
+
+let front = false;
+document.getElementById('bView').addEventListener('click', e => {
+  front = !front;
+  if (front) { cam.th = -Math.PI / 2; cam.ph = Math.PI / 2; cam.r = 8.5; e.target.textContent = 'Three-quarter view'; }
+  else { cam.th = 0.72; cam.ph = 1.14; cam.r = 9.5; e.target.textContent = 'Front view'; }
+  applyCam();
+});
+
+document.getElementById('toggleRail').addEventListener('click', e => {
+  const r = document.getElementById('rail');
+  const hid = r.classList.toggle('hidden');
+  e.target.setAttribute('aria-expanded', String(!hid));
+});
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+  if (e.code === 'Space') { e.preventDefault(); bPlay.click(); }
+});
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ─────────────────────────────────────────────────────────────────── boot */
+resize(); applyCam();
+document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ['local-floor'] }));
+renderer.setAnimationLoop(frame);
+</script>
+</body>
+</html>

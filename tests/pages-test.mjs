@@ -11,6 +11,7 @@ test('page is self-contained and project-path safe', () => {
   assert.match(html, /\.\/vendor\/three\.module\.js/);
   assert.match(html, /\.\/vendor\/VRButton\.js/);
   assert.match(html, /\.\/xr-controls\.js/);
+  assert.match(html, /\.\/field-kernels\.js/);
 });
 
 test('renderer uses the WebXR-owned animation loop', () => {
@@ -61,11 +62,15 @@ test('published page identifies its commit and deployment time', () => {
   assert.match(html, /<time datetime="__BUILD_TIME__">__BUILD_TIME__<\/time>/);
   assert.match(workflow, /git rev-parse --short=7 HEAD/);
   assert.match(workflow, /date -u \+'%Y-%m-%dT%H:%M:%SZ'/);
-  assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html/);
+  assert.match(workflow, /sed -i .*__BUILD_HASH__.*__BUILD_TIME__.*_site\/index\.html _site\/rotating-field-machine\.html _site\/delta-wye-transformer\.html/);
 });
 
 test('vendored runtime and license are present', () => {
   for (const path of ['vendor/three.module.js', 'vendor/three.core.js', 'vendor/VRButton.js', 'vendor/THREE-LICENSE.txt']) {
     assert.ok(fs.statSync(new URL(`../${path}`, import.meta.url)).size > 0, path);
   }
+});
+
+test('machine page has cross-link to the transformer page', () => {
+  assert.match(html, /delta-wye-transformer\.html/);
 });
