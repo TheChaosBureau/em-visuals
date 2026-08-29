@@ -13,9 +13,10 @@ test('overhead line page is self-contained and deployable',()=>{
 });
 
 test('page exposes the geometry and inductance model',()=>{
-  for(const id of ['spacing','radius','sag','field','slice']) assert.match(html,new RegExp(`id=["']${id}["']`));
+  for(const id of ['spacing','radius','sag','length','sideView','fieldView','field','slice']) assert.match(html,new RegExp(`id=["']${id}["']`));
   assert.match(html,/2e-7\*Math\.log\(spacing\/gmr\)/);
   assert.match(html,/\.7788\*radius/);
-  assert.match(html,/function B\(y,z,I\)/);
-  assert.match(html,/Math\.cos\(phase-2\*Math\.PI\/3\)/);
+  assert.match(html,/function B\(x,y,z,I\)/);
+  assert.match(html,/Math\.cos\(p-2\*Math\.PI\/3\)/);
+  assert.match(html,/phase-2\*Math\.PI\*electricalLength\*x\/span/);
 });
