@@ -41,13 +41,15 @@ jobs:
           cp rotating-field-machine.html _site/index.html
           cp rotating-field-machine.html _site/rotating-field-machine.html
           cp delta-wye-transformer.html _site/delta-wye-transformer.html
+          cp overhead-line-power-flow.html _site/overhead-line-power-flow.html
           cp overhead-line-inductance.html _site/overhead-line-inductance.html
           build_hash="$(git rev-parse --short=7 HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          sed -i "s/__BUILD_HASH__/${build_hash}/g; s/__BUILD_TIME__/${build_time}/g" _site/index.html _site/rotating-field-machine.html _site/delta-wye-transformer.html _site/overhead-line-inductance.html
+          sed -i "s/__BUILD_HASH__/${build_hash}/g; s/__BUILD_TIME__/${build_time}/g" _site/index.html _site/rotating-field-machine.html _site/delta-wye-transformer.html _site/overhead-line-power-flow.html
           cp xr-controls.js _site/xr-controls.js
           cp field-kernels.js _site/field-kernels.js
           cp transformer-model.js _site/transformer-model.js
+          cp overhead-line-model.js _site/overhead-line-model.js
           cp -R vendor _site/vendor
           cp LICENSE _site/LICENSE
           touch _site/.nojekyll
