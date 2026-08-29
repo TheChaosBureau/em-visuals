@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>3-phase overhead line — magnetic field and inductance</title>
+<style>
+:root{--bg:#080b0f;--panel:#0e141b;--panel2:#131b24;--rule:#1e2a35;--ink:#cbd7e1;--dim:#7d8f9d;--faint:#4e5d69;--accent:#33cfc0;--a:#e8544b;--b:#f2c14e;--c:#4fa3e0}
+*{box-sizing:border-box;margin:0;padding:0} html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);-webkit-font-smoothing:antialiased}
+a{color:var(--accent)} #gl{display:block;width:100%;height:100%}
+#rail{position:fixed;z-index:10;inset:0 auto 0 0;width:292px;background:linear-gradient(180deg,#0e141b,#0b1017);border-right:1px solid var(--rule);display:flex;flex-direction:column}
+header{padding:16px;border-bottom:1px solid var(--rule)} h1{font:700 16px/1.2 system-ui,sans-serif;color:#eef4f8} h1 em{font-style:normal;color:var(--accent)}
+.sub{margin-top:6px;color:var(--faint);font-size:10.5px;line-height:1.55}.build{margin-top:7px;color:var(--faint);font-size:9.5px}.build code{color:var(--dim)}
+#scroll{overflow:auto;flex:1} section{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.eyebrow{font:600 10px system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-bottom:10px;display:flex;justify-content:space-between}.eyebrow b{font:500 10px ui-monospace,monospace;color:var(--dim);letter-spacing:0;text-transform:none}
+.sl{display:grid;grid-template-columns:55px 1fr 52px;align-items:center;gap:8px;padding:5px 0}.sl label{color:var(--dim);font-size:10.5px}.sl b{text-align:right;font-weight:500;color:#eef4f8;font-size:10.5px;font-variant-numeric:tabular-nums}
+input[type=range]{appearance:none;background:none;height:16px;cursor:pointer}input[type=range]::-webkit-slider-runnable-track{height:2px;background:#28343f}input[type=range]::-webkit-slider-thumb{appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent);margin-top:-4.5px;box-shadow:0 0 0 3px #33cfc024}
+.row{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer}.row input{position:absolute;opacity:0}.box{width:13px;height:13px;border:1px solid #354553;border-radius:2px;background:#0a1016}.row input:checked+.box{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 3px #0a1016}.lbl{color:var(--ink)}
+.phases{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.phase{text-align:center;padding:7px 2px;border:1px solid var(--rule);border-radius:3px;background:#0a1016}.phase strong{display:block;font:700 15px system-ui,sans-serif}.phase span{font-size:10px;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse}td{padding:4px 0}td:first-child{color:var(--dim)}td:last-child{text-align:right;color:#eef4f8;font-variant-numeric:tabular-nums}
+.hero{font:700 22px system-ui,sans-serif!important;color:var(--accent)!important}.note{color:var(--faint);font-size:10px;line-height:1.65}.note b{color:var(--dim);font-weight:500}
+#legend{position:fixed;z-index:5;left:310px;bottom:18px;padding:9px 11px;border:1px solid var(--rule);background:#0a0f14d9;border-radius:4px;color:var(--dim);line-height:1.6;backdrop-filter:blur(8px);pointer-events:none}.key{display:inline-block;width:17px;height:2px;vertical-align:middle;margin:0 4px 2px 8px}.key:first-child{margin-left:0}
+#hint{position:fixed;right:14px;bottom:14px;color:var(--faint);font-size:10px;line-height:1.6;text-align:right;pointer-events:none}
+#toggle{display:none;position:fixed;z-index:20;top:12px;left:12px;background:#0e141beb;color:var(--ink);border:1px solid var(--rule);padding:7px 11px;border-radius:3px;font:inherit}
+@media(max-width:760px){#rail{width:100%;height:52%;top:auto;border-right:0;border-top:1px solid var(--rule)}#rail.hidden{display:none}#toggle{display:block}#legend{left:12px;bottom:auto;top:55px}#hint{display:none}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas><button id="toggle" aria-expanded="true">Controls</button>
+<aside id="rail"><header>
+  <h1>Overhead line —<br><em>where inductance comes from</em></h1>
+  <div class="sub">One balanced 3-phase circuit. The moving arrows are the instantaneous magnetic field around the conductors.</div>
+  <div class="build">build <code>__BUILD_HASH__</code> · published <time datetime="__BUILD_TIME__">__BUILD_TIME__</time></div>
+  <div class="sub"><a href="./rotating-field-machine.html">rotating machine</a> · <a href="./delta-wye-transformer.html">transformer</a></div>
+</header><div id="scroll">
+<section><div class="eyebrow">Geometry <b>drag to orbit</b></div>
+  <div class="sl"><label>spacing</label><input id="spacing" type="range" min="2" max="12" step="0.1" value="6"><b id="spacingV">6.0 m</b></div>
+  <div class="sl"><label>radius</label><input id="radius" type="range" min="5" max="60" step="1" value="15"><b id="radiusV">15 mm</b></div>
+  <div class="sl"><label>sag</label><input id="sag" type="range" min="0" max="12" step="0.2" value="5"><b id="sagV">5.0 m</b></div>
+</section>
+<section><div class="eyebrow">Instantaneous field <b id="angleV">ωt 0°</b></div>
+  <div class="phases"><div class="phase"><strong style="color:var(--a)">A</strong><span id="ia">+1.00 Î</span></div><div class="phase"><strong style="color:var(--b)">B</strong><span id="ib">−0.50 Î</span></div><div class="phase"><strong style="color:var(--c)">C</strong><span id="ic">−0.50 Î</span></div></div>
+  <div class="sl" style="margin-top:7px"><label>ωt</label><input id="angle" type="range" min="0" max="360" step="1" value="0"><b></b></div>
+  <div class="sl"><label>speed</label><input id="speed" type="range" min="0" max="100" step="1" value="28"><b id="speedV">0.28×</b></div>
+  <label class="row"><input id="field" type="checkbox" checked><span class="box"></span><span class="lbl">Field arrows and loops</span></label>
+  <label class="row"><input id="slice" type="checkbox" checked><span class="box"></span><span class="lbl">Mid-span field slice</span></label>
+</section>
+<section><div class="eyebrow">Inductance <b>transposed equivalent</b></div>
+  <table><tr><td>L per phase</td><td class="hero" id="L">—</td></tr><tr><td>D<sub>eq</sub></td><td id="Deq">—</td></tr><tr><td>GMR = 0.7788 r</td><td id="gmr">—</td></tr><tr><td>at 50 Hz: X<sub>L</sub></td><td id="xl">—</td></tr></table>
+  <div class="note" style="margin-top:9px">Pull the phases apart: more field occupies the space between them, so <b>flux linkage and L rise</b>. Make the conductor thicker: the internal cutoff moves outward, so <b>L falls</b>. Sag changes the picture, but this readout uses the average horizontal geometry.</div>
+</section>
+<section><div class="eyebrow">Reading the field</div><div class="note">Arrow direction follows the right-hand rule. Brightness and length represent |B|. Between conductors, fields may reinforce or cancel as the three currents exchange roles; because i<sub>A</sub>+i<sub>B</sub>+i<sub>C</sub>=0, the field fades rapidly far from the line. The familiar formula is <b>L = 2×10⁻⁷ ln(D<sub>eq</sub>/GMR) H/m</b>.</div></section>
+</div></aside>
+<div id="legend"><span class="key" style="background:var(--a)"></span>A <span class="key" style="background:var(--b)"></span>B <span class="key" style="background:var(--c)"></span>C <span class="key" style="background:var(--accent)"></span>net B</div>
+<div id="hint">drag orbit · shift-drag pan · wheel zoom<br>field slice is perpendicular to current flow</div>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+const $=id=>document.getElementById(id), canvas=$('gl');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0x080b0f);renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x080b0f,.012);
+const camera=new THREE.PerspectiveCamera(42,1,.1,500);camera.position.set(39,24,45);
+scene.add(new THREE.HemisphereLight(0xbadcf4,0x17212a,1.7));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(20,35,30);scene.add(sun);
+const world=new THREE.Group();scene.add(world);const conductors=new THREE.Group(),fields=new THREE.Group(),sliceGroup=new THREE.Group();world.add(conductors,fields,sliceGroup);
+const COLORS=[0xe8544b,0xf2c14e,0x4fa3e0], mats=COLORS.map(c=>new THREE.MeshStandardMaterial({color:c,metalness:.52,roughness:.3,emissive:c,emissiveIntensity:.12}));
+const span=70, supportH=22;let spacing=6,sag=5,radius=.015,phase=0,last=performance.now(),playing=true;
+const current=()=>[Math.cos(phase),Math.cos(phase-2*Math.PI/3),Math.cos(phase+2*Math.PI/3)];
+function wireY(x){return supportH-sag*(1-4*x*x/(span*span))}
+function clear(g){while(g.children.length){const o=g.children.pop();o.traverse(n=>{n.geometry?.dispose();if(Array.isArray(n.material))n.material.forEach(m=>{if(!mats.includes(m))m.dispose()});else if(n.material&&!mats.includes(n.material))n.material.dispose()})}}
+function tube(points,rad,mat,segments=80){return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),segments,rad,7,false),mat)}
+function rebuildGeometry(){clear(conductors);const visR=.18+Math.sqrt(radius)*.12;
+  for(let k=0;k<3;k++){const z=(k-1)*spacing,pts=[];for(let n=0;n<=48;n++){const x=-span/2+span*n/48;pts.push(new THREE.Vector3(x,wireY(x),z))}const w=tube(pts,visR,mats[k]);w.userData.phase=k;conductors.add(w)}
+  const poleMat=new THREE.MeshStandardMaterial({color:0x354553,metalness:.7,roughness:.5});for(const x of[-span/2,span/2]){const pole=new THREE.Mesh(new THREE.CylinderGeometry(.22,.3,supportH+5,10),poleMat);pole.position.set(x,(supportH+5)/2-4,0);conductors.add(pole);const arm=new THREE.Mesh(new THREE.BoxGeometry(.5,.4,spacing*3),poleMat);arm.position.set(x,supportH,0);conductors.add(arm)}rebuildField()}
+function B(y,z,I){let by=0,bz=0;for(let k=0;k<3;k++){const dy=y-wireY(0),dz=z-(k-1)*spacing,r2=Math.max(dy*dy+dz*dz,.08);by+=-I[k]*dz/r2;bz+=I[k]*dy/r2}return new THREE.Vector2(by,bz)}
+const arrowMat=new THREE.MeshBasicMaterial({color:0x33cfc0,transparent:true,opacity:.76,depthWrite:false});
+function arrowAt(y,z,v){const mag=v.length();if(mag<.003)return;const len=Math.min(1.25,.18+mag*2.3),dir=new THREE.Vector3(0,v.x,v.y).normalize();const ar=new THREE.ArrowHelper(dir,new THREE.Vector3(0,y,z),len,0x33cfc0,.22,.12);ar.line.material.transparent=ar.cone.material.transparent=true;ar.line.material.opacity=ar.cone.material.opacity=Math.min(.9,.18+mag*1.5);sliceGroup.add(ar)}
+function rebuildField(){clear(fields);clear(sliceGroup);const I=current(),show=$('field').checked,showSlice=$('slice').checked;if(showSlice){const plane=new THREE.Mesh(new THREE.PlaneGeometry(spacing*5.4,spacing*3.6),new THREE.MeshBasicMaterial({color:0x13242a,transparent:true,opacity:.22,side:THREE.DoubleSide,depthWrite:false}));plane.rotation.y=Math.PI/2;plane.position.set(0,wireY(0),0);sliceGroup.add(plane);const step=Math.max(1.1,spacing*.38);for(let y=wireY(0)-spacing*1.55;y<=wireY(0)+spacing*1.55;y+=step)for(let z=-spacing*2.35;z<=spacing*2.35;z+=step)arrowAt(y,z,B(y,z,I))}
+  if(show){for(let k=0;k<3;k++){const amp=Math.abs(I[k]),sign=Math.sign(I[k])||1;for(let ring=1;ring<=4;ring++){const rr=.65+ring*spacing*.24,pts=[];for(let n=0;n<=64;n++){const a=sign*n/64*Math.PI*2;pts.push(new THREE.Vector3(0,wireY(0)+Math.cos(a)*rr,(k-1)*spacing+Math.sin(a)*rr))}const mat=new THREE.MeshBasicMaterial({color:COLORS[k],transparent:true,opacity:(.08+.18*amp)/(ring*.58),depthWrite:false});fields.add(tube(pts,.025+amp*.035,mat,64))}}}}
+function updateReadout(){const gmr=.7788*radius,L=2e-7*Math.log(spacing/gmr),mHkm=L*1e6; $('L').textContent=mHkm.toFixed(3)+' mH/km';$('Deq').textContent=spacing.toFixed(2)+' m';$('gmr').textContent=(gmr*1000).toFixed(1)+' mm';$('xl').textContent=(2*Math.PI*50*L*1000).toFixed(3)+' Ω/km';const I=current();['ia','ib','ic'].forEach((id,k)=>$(id).textContent=(I[k]>=0?'+':'−')+Math.abs(I[k]).toFixed(2)+' Î');$('angleV').textContent='ωt '+Math.round(phase*180/Math.PI%360)+'°'}
+function sync(){spacing=+$('spacing').value;radius=+$('radius').value/1000;sag=+$('sag').value;$('spacingV').textContent=spacing.toFixed(1)+' m';$('radiusV').textContent=Math.round(radius*1000)+' mm';$('sagV').textContent=sag.toFixed(1)+' m';rebuildGeometry();updateReadout()}
+['spacing','radius','sag'].forEach(id=>$(id).addEventListener('input',sync));['field','slice'].forEach(id=>$(id).addEventListener('change',rebuildField));$('angle').addEventListener('input',()=>{phase=+$('angle').value*Math.PI/180;playing=false;rebuildField();updateReadout()});$('speed').addEventListener('input',()=>{$('speedV').textContent=(+$('speed').value/100).toFixed(2)+'×';playing=+$('speed').value>0});
+let drag=null,yaw=-.18,pitch=.08,dist=61,target=new THREE.Vector3(0,13,0);canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,shift:e.shiftKey};canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;if(drag.shift){target.y+=dy*.04;target.z-=dx*.04}else{yaw-=dx*.006;pitch=Math.max(-.15,Math.min(1.25,pitch+dy*.006))}});canvas.addEventListener('pointerup',()=>drag=null);canvas.addEventListener('wheel',e=>{dist=Math.max(24,Math.min(115,dist*Math.exp(e.deltaY*.001)));e.preventDefault()},{passive:false});
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}addEventListener('resize',resize);resize();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing&&+$('speed').value){phase=(phase+dt*(+$('speed').value/100)*1.35)%(Math.PI*2);$('angle').value=phase*180/Math.PI;rebuildField();updateReadout()}camera.position.set(target.x+dist*Math.cos(pitch)*Math.sin(yaw),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame)}
+$('toggle').addEventListener('click',()=>{const hidden=$('rail').classList.toggle('hidden');$('toggle').setAttribute('aria-expanded',String(!hidden))});sync();requestAnimationFrame(frame);
+</script>
+</body></html>

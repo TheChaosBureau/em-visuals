@@ -6,6 +6,7 @@ Interactive Three.js field visualizations, including an immersive WebXR view for
 
 - `rotating-field-machine.html` — Rotating-field 2-pole machine, E and B
 - `delta-wye-transformer.html` — 3-phase delta–wye transformer on a 3-limb core (Dy11): core flux, leakage B, induced E
+- `overhead-line-inductance.html` — Sagging 3-phase overhead line: instantaneous magnetic field and geometry-driven inductance
 
 ## Run locally
 
