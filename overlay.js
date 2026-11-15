@@ -42,7 +42,7 @@ export function stageLayout(width, height) {
   const stage = { left: safe.left, right: safe.right, top: equation.bottom, bottom: caption.top };
   return {
     safe, equation, caption, stage,
-    unit: Math.min(width, height) / 100,
+    unit: Math.max(Math.min(width, height) / 100, 5.5),      // never smaller than legible on a small screen
     centre: [(stage.left + stage.right) / 2, (stage.top + stage.bottom) / 2]
   };
 }
@@ -294,32 +294,41 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
     }));
   }
 
+  // The equation is typeset at its final size in a fresh <svg> every time it
+  // changes. Chromium lays SVG text out for the scale it is shown at, so
+  // measuring inside an element that was scaled for the previous equation
+  // would make this frame depend on the one drawn before it.
   function setEquation(e, text, fontPx, maxWidth) {
     const key = `${text}|${fontPx}|${maxWidth}`;
     if (e.key === key) return;
     e.key = key;
-    const F = 100, svg = e.svg, node = doc.createElementNS(SVG_NS, 'text');
-    node.setAttribute('font-family', SERIF); node.setAttribute('font-size', F); node.setAttribute('fill', INK);
-    const tokens = parseEquation(text);
-    let shift = 0;
-    for (const run of equationRuns(tokens, symbols)) {
-      const span = doc.createElementNS(SVG_NS, 'tspan');
-      span.textContent = run.text;
-      span.setAttribute('font-size', F * run.size);
-      if (run.italic) span.setAttribute('font-style', 'italic');
-      if (run.key) span.setAttribute('fill', color(run.key));
-      span.setAttribute('dx', (run.space * F).toFixed(1));
-      span.setAttribute('dy', ((run.shift - shift) * F).toFixed(1)); shift = run.shift;
-      node.appendChild(span);
-    }
-    svg.replaceChildren(node);
-    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', equationText(tokens));
-    let box = { x: 0, y: -F, width: F * text.length * 0.5, height: F * 1.3 };
-    try { const b = node.getBBox(); if (b.width > 0) box = b; } catch (_) { /* not rendered yet */ }
-    const pad = F * 0.08, w = box.width + 2 * pad, h = box.height + 2 * pad;
-    const k = Math.min(fontPx / F, maxWidth / w);
-    svg.setAttribute('viewBox', `${box.x - pad} ${box.y - pad} ${w} ${h}`);
-    svg.style.width = (w * k) + 'px'; svg.style.height = (h * k) + 'px';
+    const tokens = parseEquation(text), runs = equationRuns(tokens, symbols);
+    const typeset = F => {
+      const svg = doc.createElementNS(SVG_NS, 'svg'), node = doc.createElementNS(SVG_NS, 'text');
+      svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', equationText(tokens));
+      node.setAttribute('font-family', SERIF); node.setAttribute('font-size', F); node.setAttribute('fill', INK);
+      let shift = 0;
+      for (const run of runs) {
+        const span = doc.createElementNS(SVG_NS, 'tspan');
+        span.textContent = run.text;
+        span.setAttribute('font-size', (F * run.size).toFixed(2));
+        if (run.italic) span.setAttribute('font-style', 'italic');
+        if (run.key) span.setAttribute('fill', color(run.key));
+        span.setAttribute('dx', (run.space * F).toFixed(2));
+        span.setAttribute('dy', ((run.shift - shift) * F).toFixed(2)); shift = run.shift;
+        node.appendChild(span);
+      }
+      svg.appendChild(node);
+      e.el.replaceChildren(svg);
+      let box = { x: 0, y: -F, width: F * text.length * 0.5, height: F * 1.3 };
+      try { const b = node.getBBox(); if (b.width > 0) box = b; } catch (_) { /* not rendered yet */ }
+      const pad = F * 0.08, w = box.width + 2 * pad, h = box.height + 2 * pad;
+      svg.setAttribute('viewBox', `${box.x - pad} ${box.y - pad} ${w} ${h}`);
+      svg.style.width = w + 'px'; svg.style.height = h + 'px';
+      return w;
+    };
+    const width = typeset(fontPx);
+    if (width > maxWidth) typeset(Math.floor(fontPx * maxWidth / width * 10) / 10);     // too long for the band: set it smaller
   }
 
   function setLabel(e, cue, values) {
@@ -334,12 +343,12 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
 
   /* ── sprites (WebXR fallback) ── */
   const sprites = new Map();   // cue id → { sprite, key }
-  const UNITS_PER_PX = 0.0026;
+  const UNITS_PER_PX = 0.0013;     // scene units per texture pixel: a label value stands about 0.15 units tall
 
   function drawSprite(lines) {
     // lines: [{ runs: [{ text, color, font }], height }]
     const canvas = doc.createElement('canvas'), ctx = canvas.getContext('2d');
-    const pad = 26;
+    const pad = 52;
     let width = 0, height = pad * 2;
     for (const line of lines) {
       let w = 0;
@@ -348,7 +357,7 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
     }
     canvas.width = Math.ceil(width + pad * 2); canvas.height = Math.ceil(height);
     ctx.fillStyle = '#0a0f14dd'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#33434f'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+    ctx.strokeStyle = '#33434f'; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, canvas.width - 3, canvas.height - 3);
     ctx.textBaseline = 'alphabetic';
     let y = pad;
     for (const line of lines) {
@@ -368,13 +377,13 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
     if (cue.type === 'label') {
       const lines = [];
       const title = fillTemplate(cue.title, values), text = fillTemplate(cue.text, values), note = fillTemplate(cue.note, values);
-      if (title) lines.push({ height: 40, runs: [{ text: title.toUpperCase(), color: color(cue.color), font: `650 28px ${SANS}` }] });
-      if (text) lines.push({ height: 68, runs: [{ text, color: INK, font: `600 56px ${SANS}` }] });
-      if (note) lines.push({ height: 40, runs: [{ text: note, color: DIM, font: `400 28px ${SANS}` }] });
+      if (title) lines.push({ height: 80, runs: [{ text: title.toUpperCase(), color: color(cue.color), font: `650 56px ${SANS}` }] });
+      if (text) lines.push({ height: 136, runs: [{ text, color: INK, font: `600 112px ${SANS}` }] });
+      if (note) lines.push({ height: 80, runs: [{ text: note, color: DIM, font: `400 56px ${SANS}` }] });
       return lines;
     }
     if (cue.type === 'equation') {
-      const F = 64;
+      const F = 128;
       return [{
         height: F * 1.5,
         runs: equationRuns(parseEquation(fillTemplate(cue.text, values)), symbols).map(run => ({
@@ -384,7 +393,7 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
       }];
     }
     const plain = parseMarkup(fillTemplate(cue.text, values)).map(run => run.text).join('');
-    return wrapLines(plain, 34).map(text => ({ height: 54, runs: [{ text, color: INK, font: `500 40px ${SANS}` }] }));
+    return wrapLines(plain, 34).map(text => ({ height: 108, runs: [{ text, color: INK, font: `500 80px ${SANS}` }] }));
   }
 
   function updateSprites(cues, anchors, values) {
@@ -448,9 +457,8 @@ export function createOverlay({ root, colors = {}, symbols = {}, THREE = null, s
         e.el.style.opacity = cue.alpha ?? 1;
       } else if (cue.type === 'equation') {
         const e = entry(cue, () => {
-          const el = doc.createElement('div'); el.className = 'ov-band ov-equation';
-          const svg = doc.createElementNS(SVG_NS, 'svg'); el.appendChild(svg); root.appendChild(el);
-          return { el, svg };
+          const el = doc.createElement('div'); el.className = 'ov-band ov-equation'; root.appendChild(el);
+          return { el };
         });
         place(e.el, layout.equation);
         setEquation(e, fillTemplate(cue.text, values), u * 5.6, layout.equation.right - layout.equation.left);
