@@ -84,8 +84,10 @@ export function sliceCount(p) {
 
 // The solid as drawn, up to the playhead `upTo`: slices along time, each with
 // the cross-section |v| × |i| taken at the middle of its slot. A slice is
-// `negative` where v·i < 0; its signed volume is v·i·Δt.
+// `negative` where v·i < 0; its signed volume is v·i·Δt. A steady solid has
+// the same cross-section throughout and is drawn as one slice: a box.
 export function slices(p, upTo = p.duration, n = sliceCount(p)) {
+  if (!(p.mode > 0)) n = 1;
   const out = [], dt = p.duration / n, end = Math.min(upTo, p.duration);
   for (let k = 0; k < n; k++) {
     const t0 = k * dt;

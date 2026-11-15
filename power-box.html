@@ -214,7 +214,7 @@ import { createSceneClock } from './scene-clock.js';
 import { loadTimeline, shortSideFov } from './timeline.js';
 import { createOverlay, stageLayout } from './overlay.js';
 import {
-  DEFAULTS, potentialAt, flowAt, powerAt, energyAt, chargeAt, voltSecondsAt, meanPower, backflowFraction, sliceCount, slices
+  DEFAULTS, potentialAt, flowAt, powerAt, energyAt, chargeAt, voltSecondsAt, meanPower, backflowFraction, slices
 } from './power-box-model.js';
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -224,7 +224,7 @@ import {
    ═══════════════════════════════════════════════════════════════════════════ */
 const RAD = Math.PI / 180;
 const SV = 0.14, SI = 0.55, ST = 0.8;          // potential → y, flow → z, time → x
-const MAX_SLICES = 240;
+const MAX_SLICES = 240;                        // the model never cuts finer (sliceCount)
 const R_AXIS = 0.017, R_EDGE = 0.011, R_LIVE = 0.014;
 const HERO = { th: -35 * RAD, ph: 68 * RAD, r: 8.8 };
 const FOV = 30;                                 // across the short side of the frame
@@ -335,9 +335,10 @@ function applyCam() {
 })();
 
 /* ───────────────────────────────────────────────────────────── the solid */
-// Steady: one box, from the origin to the playhead. Otherwise: slices along
-// time, each carrying the rectangle |v| × |i| of its instant, amber where
-// power flows forward and red where it flows back.
+// The model's slices, one mesh instance each. Steady: a single box from the
+// origin to the playhead. Otherwise: slices along time, each carrying the
+// rectangle |v| × |i| of its instant, amber where power flows forward and red
+// where it flows back.
 const slabs = new THREE.InstancedMesh(
   new THREE.BoxGeometry(1, 1, 1),
   new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, toneMapped: false }),
@@ -354,18 +355,15 @@ const SHEET = 0.004;             // thickness of a rectangle not yet pulled thro
 
 function updateSolid(P, G) {
   let count = 0;
-  const put = (x0, len, h, d, colour) => {
-    _m.makeScale(len, h, d).setPosition(x0 + len / 2, h / 2, d / 2);
-    slabs.setMatrixAt(count, _m); slabs.setColorAt(count, colour); count++;
-  };
   if (G.Y1 > 1e-4 && G.Z1 > 1e-4) {
-    if (P.mode <= 0) put(0, Math.max(G.X1, SHEET), G.Y1, G.Z1, SOLID.power);
-    else {
-      const gap = 0.08 * smooth(P.mode);
-      for (const s of slices(P.model, Math.max(P.playhead, 1e-9), G.n)) {
-        const len = Math.max((s.t1 - s.t0) * ST, SHEET);
-        put(s.t0 * ST + len * gap / 2, len * (1 - gap), Math.max(s.absV * SV, 0.002), Math.max(s.absI * SI * P.fill, 0.002), s.negative ? SOLID.back : SOLID.power);
-      }
+    const gap = 0.08 * smooth(P.mode);          // slices part slightly as the sinusoid comes in
+    for (const s of slices(P.model, Math.max(P.playhead, 1e-9))) {
+      const len = Math.max((s.t1 - s.t0) * ST, SHEET), thick = len * (1 - gap);
+      const h = Math.max(s.absV * SV, 0.002), d = Math.max(s.absI * SI * P.fill, 0.002);
+      _m.makeScale(thick, h, d).setPosition(s.t0 * ST + len * gap / 2 + thick / 2, h / 2, d / 2);
+      slabs.setMatrixAt(count, _m);
+      slabs.setColorAt(count, s.negative ? SOLID.back : SOLID.power);
+      count++;
     }
   }
   slabs.count = count;
@@ -535,8 +533,7 @@ function extents(P) {
   return {
     X1: P.playhead * ST, Y1: P.potential * SV, ZF, Z1: ZF * P.fill,
     liveV: Math.abs(potentialAt(P.model, P.playhead)) * SV,
-    liveI: Math.abs(flowAt(P.model, P.playhead)) * SI * P.fill,
-    n: sliceCount(P.model)
+    liveI: Math.abs(flowAt(P.model, P.playhead)) * SI * P.fill
   };
 }
 

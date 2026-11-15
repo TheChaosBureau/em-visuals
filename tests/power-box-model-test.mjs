@@ -85,11 +85,19 @@ test('closed-form integrals agree with numerical integration at any time, phase 
 });
 
 test('the drawn solid has the volume of the accumulated energy, in both modes', () => {
-  // steady: every slice has the same cross-section, the sum is exact at any playhead
+  // steady: one box from the origin to the playhead, exact at any playhead
   for (const upTo of [0.4, 1, 2.2, 3]) {
     const list = slices(steady, upTo);
-    for (const s of list) { assert.equal(s.absV, 12); assert.equal(s.absI, 2); assert.equal(s.negative, false); }
+    assert.equal(list.length, 1);
+    assert.deepEqual([list[0].t0, list[0].t1, list[0].absV, list[0].absI, list[0].negative], [0, upTo, 12, 2, false]);
     close(slicedEnergy(list), energyAt(steady, upTo), 1e-12, `steady to ${upTo}s`);
+    close(slicedEnergy(list), 12 * 2 * upTo, 1e-12, 'V·I·t');
+  }
+  // the same steady values cut into slices still add up to the same volume
+  for (const upTo of [0.4, 2.2, 3]) {
+    const barely = { ...steady, mode: 1e-12 }, list = slices(barely, upTo);
+    assert.ok(list.length > 1);
+    close(slicedEnergy(list), 12 * 2 * upTo, 1e-9, `sliced steady to ${upTo}s`);
   }
   // sinusoidal over whole cycles: the midpoint sum is exact for the double-frequency ripple
   for (const phiDeg of [0, 37, 90, 120, 180]) {
