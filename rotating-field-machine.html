@@ -160,7 +160,7 @@ table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:
     <h1>Rotating field —<br><em>2-pole machine</em></h1>
     <div class="sub">Air-cored Biot–Savart. 12&nbsp;slots, q&nbsp;=&nbsp;2, full pitch.<br>All quantities normalised, μ₀IN/4π&nbsp;=&nbsp;1.</div>
     <div class="build-info">build <code>__BUILD_HASH__</code> · published <time datetime="__BUILD_TIME__">__BUILD_TIME__</time></div>
-    <div class="sub"><a href="./delta-wye-transformer.html">delta–wye transformer</a> · <a href="./overhead-line-power-flow.html">overhead line</a></div>
+    <div class="sub"><a href="./delta-wye-transformer.html">delta–wye transformer</a> · <a href="./overhead-line-power-flow.html">overhead line</a> · <a href="./power-box.html">power box</a></div>
   </header>
 
   <div id="scroll">
@@ -258,6 +258,8 @@ import * as THREE from 'three';
 import { VRButton } from './vendor/VRButton.js';
 import { applyDeadzone, nextScale, pressedEdge, beginGrab, endGrab } from './xr-controls.js';
 import { fieldB, fieldA } from './field-kernels.js';
+import { createSceneClock } from './scene-clock.js';
+import { loadTimeline, shortSideFov } from './timeline.js';
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════════════
    Geometry and physics constants.  Units: R_bore = 1, mu0*I*N/(4*pi) = 1.
@@ -578,6 +580,12 @@ const eArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
   depthWrite: false, fog: false
 }));
 eArrows.frustumCulled = false; modelRoot.add(eArrows);
+
+// These buffers are rewritten every frame. three.js sorts translucent objects by
+// the bounding sphere it computes on the first draw, so pin the sphere to the
+// model origin: the draw order against the translucent core then no longer
+// depends on which frame happened to be drawn first.
+for (const g of [lineGeo, partGeo, eGeo]) g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
 function ramp(u) {
   u = u < 0 ? 0 : u > 1 ? 1 : u;
@@ -1040,7 +1048,12 @@ function drawScopes(t) {
 /* ═══════════════════════════════════════════════════════════════════════════
    Frame
    ═══════════════════════════════════════════════════════════════════════════ */
-let last = performance.now(), ready = false, lastFieldUpdate = -Infinity;
+// Time comes from the scene clock: wall-clock steps by default, or exactly
+// frame / fps with ?fps=…&frame=… (see scene-clock.js). ?timeline=<url> scripts
+// the camera and the phase ωt (parameter "phase", in degrees).
+const clock = createSceneClock();
+let timeline = null;
+let ready = false, lastFieldUpdate = -Infinity;
 let xrScale = 1;
 const xrButtons = { right: [false, false] };
 const xrControllers = [];
@@ -1277,10 +1290,18 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (!ready) return;
+  const dt = clock.tick(now);
+  if (!ready || (clock.timeline && !timeline)) return;
   if (renderer.xr.isPresenting) { updateGrabTargets(); updateXRControls(dt); }
-  if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
+  const script = timeline?.stateAt(clock.fixed ? clock.time : clock.time % timeline.duration);
+  if (script?.params.phase !== undefined) { S.t = (script.params.phase * Math.PI / 180) % TAU; syncPhaseUI(); }
+  else if (clock.fixed) { S.t = (clock.time * S.speed * 2.2) % TAU; syncPhaseUI(); }
+  else if (S.playing) { S.t = (S.t + dt * S.speed * 2.2) % TAU; syncPhaseUI(); }
+  if (script?.camera && !renderer.xr.isPresenting) {
+    camera.position.fromArray(script.camera.position); camera.up.fromArray(script.camera.up);
+    camera.lookAt(script.camera.target[0], script.camera.target[1], script.camera.target[2]);
+    camera.fov = shortSideFov(script.camera.fov, camera.aspect); camera.updateProjectionMatrix();
+  }
 
   const c = Math.cos(S.t), s = Math.sin(S.t);
 
@@ -1336,6 +1357,7 @@ function frame(now) {
   }
   drawScopes(S.t);
   renderer.render(scene, camera);
+  clock.drawn();
 }
 const fmt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(3);
 
@@ -1428,6 +1450,7 @@ async function run() {
   }
 }
 resize(); applyCam();
+if (clock.timeline) loadTimeline(clock.timeline).then(loaded => { timeline = loaded; }, error => { console.error(error); window.__frameError = String(error.message ?? error); });
 renderer.setAnimationLoop(frame);
 run();
 </script>

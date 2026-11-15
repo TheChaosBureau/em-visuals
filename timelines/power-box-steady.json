@@ -1,0 +1,55 @@
+{
+  "title": "Power is an area, energy is a volume (steady)",
+  "page": "power-box.html",
+  "duration": 20,
+  "fps": 30,
+  "ease": "ease-in-out",
+  "camera": [
+    { "t": 0, "target": [0, 0.84, 0.55], "orbit": { "azimuth": -90, "elevation": 0, "distance": 7.4 }, "fov": 30 },
+    { "t": 6, "target": [0, 0.84, 0.55] },
+    { "t": 9, "target": [1.2, 0.84, 0.55], "orbit": { "azimuth": -35, "elevation": 22, "distance": 8.8 } },
+    { "t": 9.8 },
+    { "t": 11.1, "orbit": { "azimuth": -64, "elevation": 9, "distance": 8.6 } },
+    { "t": 12.7 },
+    { "t": 14, "orbit": { "azimuth": -30, "elevation": 50, "distance": 8.8 } },
+    { "t": 15.5 },
+    { "t": 16.8, "orbit": { "azimuth": -9, "elevation": 12, "distance": 8.8 } },
+    { "t": 18.3 },
+    { "t": 19.5, "orbit": { "azimuth": -35, "elevation": 22, "distance": 8.8 } }
+  ],
+  "params": {
+    "potential": [[0.4, 0], [1.9, 12]],
+    "flow": [[1.9, 0], [3.3, 2]],
+    "fill": [[3.5, 0], [4.9, 1]],
+    "duration": 3,
+    "playhead": [[6, 0], [9, 3]],
+    "mode": 0
+  },
+  "cues": [
+    { "type": "caption", "in": 0.3, "out": 3.4, "text": "Two quantities: [potential](potential), in volts, and [flow](flow), in amperes." },
+    { "type": "caption", "in": 3.4, "out": 6.1, "text": "The rectangle they span is [power](power): volts × amperes = watts." },
+    { "type": "caption", "in": 6.1, "out": 9.9, "text": "Pull the rectangle through time. The volume it sweeps out is [energy](power)." },
+    { "type": "caption", "in": 9.9, "out": 12.8, "text": "Every face is a product of two edges. [Potential](potential) × [flow](flow) is [power](power)." },
+    { "type": "caption", "in": 12.8, "out": 15.6, "text": "[Flow](flow) × time is charge, in coulombs." },
+    { "type": "caption", "in": 15.6, "out": 18.4, "text": "[Potential](potential) × time is volt-seconds." },
+    { "type": "caption", "in": 18.4, "out": 21, "text": "Three edges, three faces, one volume: 72 joules." },
+
+    { "type": "equation", "in": 4.2, "out": 6.1, "text": "p = v × i = {power}" },
+    { "type": "equation", "in": 6.3, "out": 9.9, "text": "E = p × t = {energy}" },
+    { "type": "equation", "in": 9.9, "out": 12.8, "text": "{potential} × {flow} = {power}" },
+    { "type": "equation", "in": 12.8, "out": 15.6, "text": "{flow} × {time} = {charge}" },
+    { "type": "equation", "in": 15.6, "out": 18.4, "text": "{potential} × {time} = {voltseconds}" },
+    { "type": "equation", "in": 18.4, "out": 21, "text": "E = v × i × t = {energy}" },
+
+    { "type": "label", "in": 0.7, "out": 21, "anchor": "potential", "title": "potential", "text": "{potential}", "color": "potential" },
+    { "type": "label", "in": 2.1, "out": 21, "anchor": "flow", "title": "flow", "text": "{flow}", "color": "flow" },
+    { "type": "label", "in": 6.5, "out": 21, "anchor": "time", "title": "time", "text": "{time}", "color": "time" },
+    { "type": "label", "in": 4.9, "out": 6.2, "anchor": "power", "side": "top", "title": "power", "text": "{power}", "color": "power" },
+    { "type": "label", "in": 10.6, "out": 12.8, "anchor": "power", "side": "top", "title": "power", "text": "{power}", "color": "power" },
+    { "type": "label", "in": 13.6, "out": 15.6, "anchor": "charge", "side": "top", "title": "charge", "text": "{charge}", "color": "face" },
+    { "type": "label", "in": 16.4, "out": 18.4, "anchor": "voltseconds", "side": "top", "title": "volt-seconds", "text": "{voltseconds}", "color": "face" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "power", "title": "power", "text": "{power}", "color": "power" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "charge", "title": "charge", "text": "{charge}", "color": "face" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "voltseconds", "title": "volt-seconds", "text": "{voltseconds}", "color": "face" }
+  ]
+}

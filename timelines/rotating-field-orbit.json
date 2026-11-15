@@ -1,0 +1,17 @@
+{
+  "title": "Rotating field: one turn of the field while the camera swings round the machine",
+  "page": "rotating-field-machine.html",
+  "duration": 20,
+  "fps": 30,
+  "up": [0, 0, 1],
+  "ease": "ease-in-out",
+  "camera": [
+    { "t": 0, "target": [0, 0, 0], "orbit": { "azimuth": 41, "elevation": 25, "distance": 12.5 }, "fov": 42 },
+    { "t": 8, "orbit": { "azimuth": 100, "elevation": 34, "distance": 11 } },
+    { "t": 14, "orbit": { "azimuth": 150, "elevation": 16, "distance": 12 } },
+    { "t": 20, "orbit": { "azimuth": 221, "elevation": 25, "distance": 12.5 } }
+  ],
+  "params": {
+    "phase": [[0, 0, "linear"], [20, 360, "linear"]]
+  }
+}
