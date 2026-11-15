@@ -278,7 +278,7 @@ const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 400);
 // top brightest, the power rectangle next, the long side darkest.
 scene.add(new THREE.HemisphereLight(0xffffff, 0x39424b, 1.15));
 const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(-7, 7, 3); scene.add(key);
-const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(4, 2, 7); scene.add(fill);
+const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(4, 2, 7); scene.add(fill);
 
 // The model is Y-up, like the WebXR tracking space. Immersive placement lives
 // in its own root so the thumbsticks can turn and scale the whole model.
@@ -335,29 +335,37 @@ function applyCam() {
 })();
 
 /* ───────────────────────────────────────────────────────────── the solid */
-// Slices along time. In steady mode they touch and read as one box; in
-// sinusoidal mode each carries the rectangle |v| × |i| of its instant.
+// Steady: one box, from the origin to the playhead. Otherwise: slices along
+// time, each carrying the rectangle |v| × |i| of its instant, amber where
+// power flows forward and red where it flows back.
 const slabs = new THREE.InstancedMesh(
   new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, toneMapped: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, toneMapped: false }),
   MAX_SLICES);
 slabs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 slabs.setColorAt(0, SOLID.power); slabs.instanceColor.setUsage(THREE.DynamicDrawUsage);
 slabs.frustumCulled = false; modelRoot.add(slabs);
+// Rewritten every frame: pin the sphere three.js sorts by, or the draw order
+// would depend on which frame happened to be drawn first.
+const UNBOUNDED = new THREE.Sphere(new THREE.Vector3(), Infinity);
+slabs.boundingSphere = UNBOUNDED;
 const _m = new THREE.Matrix4();
+const SHEET = 0.004;             // thickness of a rectangle not yet pulled through time
 
 function updateSolid(P, G) {
   let count = 0;
+  const put = (x0, len, h, d, colour) => {
+    _m.makeScale(len, h, d).setPosition(x0 + len / 2, h / 2, d / 2);
+    slabs.setMatrixAt(count, _m); slabs.setColorAt(count, colour); count++;
+  };
   if (G.Y1 > 1e-4 && G.Z1 > 1e-4) {
-    const gap = 0.08 * smooth(P.mode);
-    for (const s of slices(P.model, Math.max(P.playhead, 1e-9), G.n)) {
-      // a rectangle not yet pulled through time is drawn as a sheet
-      const len = Math.max((s.t1 - s.t0) * ST, 0.004);
-      const h = Math.max(s.absV * SV, 0.002), d = Math.max(s.absI * SI * P.fill, 0.002);
-      _m.makeScale(len * (1 - gap) + 0.002, h, d).setPosition(s.t0 * ST + len / 2, h / 2, d / 2);
-      slabs.setMatrixAt(count, _m);
-      slabs.setColorAt(count, s.negative ? SOLID.back : SOLID.power);
-      count++;
+    if (P.mode <= 0) put(0, Math.max(G.X1, SHEET), G.Y1, G.Z1, SOLID.power);
+    else {
+      const gap = 0.08 * smooth(P.mode);
+      for (const s of slices(P.model, Math.max(P.playhead, 1e-9), G.n)) {
+        const len = Math.max((s.t1 - s.t0) * ST, SHEET);
+        put(s.t0 * ST + len * gap / 2, len * (1 - gap), Math.max(s.absV * SV, 0.002), Math.max(s.absI * SI * P.fill, 0.002), s.negative ? SOLID.back : SOLID.power);
+      }
     }
   }
   slabs.count = count;
@@ -457,7 +465,7 @@ const GRID_MAX = 260;
 const gridGeo = new THREE.BufferGeometry();
 gridGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(GRID_MAX * 2 * 3), 3));
 const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x2a1f08, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false }));
-grid.frustumCulled = false; modelRoot.add(grid);
+grid.frustumCulled = false; gridGeo.boundingSphere = UNBOUNDED; modelRoot.add(grid);
 
 function updateGrid(P, G) {
   const alpha = (1 - smooth(P.mode * 3)) * (P.showGrid ? 1 : 0);
@@ -466,7 +474,7 @@ function updateGrid(P, G) {
   grid.material.opacity = 0.42 * alpha;
   const pos = gridGeo.attributes.position.array;
   // drawn a hair outside the faces (a sheet not yet pulled through time has two)
-  const e = 0.003, x0 = -e, y0 = -e, z0 = -e, x1 = Math.max(G.X1, 0.004) + e, y1 = G.Y1 + e, z1 = G.Z1 + e;
+  const e = 0.003, x0 = -e, y0 = -e, z0 = -e, x1 = Math.max(G.X1, SHEET) + e, y1 = G.Y1 + e, z1 = G.Z1 + e;
   let n = 0;
   const seg = (ax, ay, az, bx, by, bz) => {
     if (n >= GRID_MAX) return;
@@ -577,10 +585,13 @@ function defaultCues(P) {
 // of the box, one on the silhouette, so its text lands beside the box rather
 // than across it; `out` points away from the box.
 const _eye = new THREE.Vector3();
-function anchorResolver(G, project, eye) {
+function anchorResolver(G, project, eye, sprites) {
   const { X1, Y1, Z1, ZF } = G, flat = X1 < 1e-3, thin = Z1 < 1e-3;
   const front = { x0: eye.x < 0, x1: eye.x > X1, y0: eye.y < 0, y1: eye.y > Y1, z0: eye.z < 0, z1: eye.z > Z1 };
   const unit = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+  // Sprites hang in the scene itself, so the potential and power labels, which
+  // both leave the box to the same side, are set at different heights.
+  const high = sprites ? 0.8 : 0.5, low = sprites ? 0.3 : 0.5;
   // candidates: [point, out, faceA, faceB, isAxisEdge]
   function pick(list, prefer) {
     const rim = list.filter(c => front[c.a] !== front[c.b]);
@@ -593,7 +604,7 @@ function anchorResolver(G, project, eye) {
       if (flat || thin) return { point: [0, Y1 / 2, 0], out: [0, 0, -1] };
       const list = [];
       for (const [x, a] of [[0, 'x0'], [X1, 'x1']]) for (const [z, b] of [[0, 'z0'], [Z1, 'z1']])
-        list.push({ point: [x, Y1 / 2, z], out: unit([x - X1 / 2, 0, z - Z1 / 2]), a, b, axis: x === 0 && z === 0 });
+        list.push({ point: [x, Y1 * high, z], out: unit([x - X1 / 2, 0, z - Z1 / 2]), a, b, axis: x === 0 && z === 0 });
       return pick(list, s => s[0]);                      // else the leftmost
     },
     flow: () => {
@@ -612,15 +623,15 @@ function anchorResolver(G, project, eye) {
     }
   };
   const faces = {
-    power: () => eye.x > X1 / 2 && !flat ? { point: [X1, Y1 / 2, Z1 / 2], out: [1, 0, 0] } : { point: [0, Y1 / 2, Z1 / 2], out: [-1, 0, 0] },
+    power: () => eye.x > X1 / 2 && !flat ? { point: [X1, Y1 * low, Z1 / 2], out: [1, 0, 0] } : { point: [0, Y1 * low, Z1 / 2], out: [-1, 0, 0] },
     charge: () => eye.y >= Y1 / 2 ? { point: [X1 / 2, Y1, Z1 / 2], out: [0, 1, 0] } : { point: [X1 / 2, 0, Z1 / 2], out: [0, -1, 0] },
     voltseconds: () => eye.z >= Z1 / 2 ? { point: [X1 / 2, Y1 / 2, Z1], out: [0, 0, 1] } : { point: [X1 / 2, Y1 / 2, 0], out: [0, 0, -1] },
     energy: () => ({ point: [X1 / 2, Y1, Z1 / 2], out: [0, 1, 0] }),
     live: () => ({ point: [X1, G.liveV, G.liveI / 2], out: [0, 1, 0] }),
     origin: () => ({ point: [0, 0, 0], out: unit([-1, -1, -1]) }),
     // where the WebXR fallback hangs the caption and the equation
-    caption: () => ({ point: [X1 / 2, -0.5, Z1 + 0.35] }),
-    equation: () => ({ point: [X1 / 2, Math.max(Y1, G.liveV) + 0.7, Z1 / 2] })
+    caption: () => ({ point: [X1 / 2, -0.6, Z1 + 0.4] }),
+    equation: () => ({ point: [X1 / 2, Y1 + 1.15, Z1 / 2] })
   };
   return name => (edges[name] ?? faces[name])?.() ?? null;
 }
@@ -690,7 +701,7 @@ renderer.xr.addEventListener('sessionend', () => {
    ═══════════════════════════════════════════════════════════════════════════ */
 function frame(now) {
   const dt = clock.tick(now);
-  if (!ready) return;
+  if (!ready || clock.settled) return;      // a fixed frame is drawn once, not sixty times a second
   const presenting = renderer.xr.isPresenting;
   if (presenting) updateXRControls(dt);
 
@@ -725,7 +736,7 @@ function frame(now) {
   const eye = modelRoot.worldToLocal(_eye.setFromMatrixPosition((presenting ? renderer.xr.getCamera() : camera).matrixWorld));
   overlay.update({
     cues: P.cues ?? defaultCues(P), width: viewW, height: viewH, project, values,
-    anchors: anchorResolver(G, project, eye),
+    anchors: anchorResolver(G, project, eye, presenting || forceSprites),
     obstacle: [0, 1].flatMap(a => [0, 1].flatMap(b => [0, 1].map(c => [a * G.X1, b * Math.max(G.Y1, 1e-3), c * Math.max(G.ZF, 1e-3)]))),
     sprites: presenting || forceSprites
   });
@@ -814,11 +825,16 @@ addEventListener('keydown', e => {
 
 function resize() {
   viewW = Math.max(1, stage.clientWidth); viewH = Math.max(1, stage.clientHeight);
+  clock.invalidate();
   if (renderer.xr.isPresenting) return;
   renderer.setSize(viewW, viewH, false);
   camera.aspect = viewW / viewH; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+// A fixed frame is redrawn only when something could have changed it.
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'touchmove', 'input', 'change', 'click', 'keydown']) {
+  addEventListener(type, () => clock.invalidate(), { capture: true, passive: true });
+}
 
 /* ─────────────────────────────────────────────────────────────────── boot */
 resize();

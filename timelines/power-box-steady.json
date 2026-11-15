@@ -47,6 +47,9 @@
     { "type": "label", "in": 4.9, "out": 6.2, "anchor": "power", "side": "top", "title": "power", "text": "{power}", "color": "power" },
     { "type": "label", "in": 10.6, "out": 12.8, "anchor": "power", "side": "top", "title": "power", "text": "{power}", "color": "power" },
     { "type": "label", "in": 13.6, "out": 15.6, "anchor": "charge", "side": "top", "title": "charge", "text": "{charge}", "color": "face" },
-    { "type": "label", "in": 16.4, "out": 18.4, "anchor": "voltseconds", "side": "top", "title": "volt-seconds", "text": "{voltseconds}", "color": "face" }
+    { "type": "label", "in": 16.4, "out": 18.4, "anchor": "voltseconds", "side": "top", "title": "volt-seconds", "text": "{voltseconds}", "color": "face" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "power", "title": "power", "text": "{power}", "color": "power" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "charge", "title": "charge", "text": "{charge}", "color": "face" },
+    { "type": "label", "in": 19, "out": 21, "anchor": "voltseconds", "title": "volt-seconds", "text": "{voltseconds}", "color": "face" }
   ]
 }
