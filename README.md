@@ -59,7 +59,7 @@ The quantities live in `power-box-model.js` (pure functions, tested against the 
 
 Three small modules turn a page into something that can be replayed and rendered frame by frame. They have no dependencies and are used by `power-box.html`; `rotating-field-machine.html` uses the first two.
 
-- `scene-clock.js` — the page's one source of time. Real time by default (unchanged behaviour); fixed step when the URL says so.
+- `scene-clock.js` — the page's one source of time. Real time by default (unchanged behaviour); fixed step when the URL says so. A page calls `clock.tick(now)` at the top of its animation loop, takes its state from `clock.time` in fixed step, and calls `clock.drawn()` after rendering.
 - `timeline.js` — a timeline is a JSON object: duration, keyframes for the camera pose (position or orbit, target, field of view) and for named numeric scene parameters, each key with an easing (`linear`, `ease-in`, `ease-out`, `ease-in-out`, `hold`), plus caption, label and equation cues. `stateAt(t)` is a pure function of `t`, so frames can be drawn in any order. The format is described at the top of the file.
 - `overlay.js` — draws the cues: captions in the lower third, labels attached to points in the scene (projected every frame and kept off the geometry), and equations set as SVG text by a small built-in formatter (`p = v × i`, `E = ∫ p dt`, `V_rms`, `x^2`, units). Text stays 5 % from every edge, and in a vertical frame clear of the top 12 % and bottom 20 %. Nothing is fetched at run time.
 
@@ -90,7 +90,7 @@ That writes `out/power-box-steady-wide.mp4` and `out/power-box-steady-vertical.m
 
 The tool needs a Chromium and an ffmpeg that are already installed: pass `--chromium <path>` / `--ffmpeg <path>`, set `CHROMIUM_PATH` / `FFMPEG_PATH`, or have them on `PATH`. With Nix: `nix shell nixpkgs#chromium nixpkgs#ffmpeg -c node tools/render.mjs --timeline …`.
 
-Useful options (`--help` lists all): `--preset wide|vertical|both`, `--stills 0,90,300` to also save those frames as PNG, `--stills-only`, `--keep-frames`, `--frames 0-149`, `--supersample 1` for a faster draft, and `--verify 12` to redraw 12 frames in a fresh page, in reverse order, and require byte-identical PNGs.
+Useful options (`--help` lists all): `--preset wide|vertical|both`, `--stills 0,90,300` to also save those frames as PNG, `--stills-only`, `--keep-frames`, `--frames 0-149`, `--supersample 2` for smoother edges at about three times the render time, and `--verify 12` to redraw 12 frames in a fresh page, in reverse order, and require byte-identical PNGs.
 
 Headless WebGL: the tool launches Chromium with
 
@@ -99,7 +99,9 @@ Headless WebGL: the tool launches Chromium with
 --force-color-profile=srgb --font-render-hinting=none --disable-lcd-text --hide-scrollbars
 ```
 
-The first line selects ANGLE's software rasterizer (SwiftShader), which is what worked here with Chromium 143 on a machine with no GPU (WebGL 2, 4× MSAA); the second keeps colour and text rendering the same from run to run. Rendering is on the CPU, so a 20 s clip takes a few minutes per preset. Text uses the fonts installed on the rendering machine.
+The first line selects ANGLE's software rasterizer (SwiftShader), which is what worked here with Chromium 143 on a machine with no GPU (WebGL 2, 4× MSAA); the second keeps colour and text rendering the same from run to run. Rendering is on the CPU: a 20 s clip (600 frames) took about two minutes per preset on a 12-core machine. Text uses the fonts installed on the rendering machine.
+
+A frame is a function of its number only: the same frame drawn in another page, after different frames, or after loading at a different frame gives a byte-identical PNG on the same machine. `--verify` checks exactly that, and two runs can be compared by their `.frames.sha256` files.
 
 ## Verify
 

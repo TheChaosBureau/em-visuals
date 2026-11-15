@@ -53,7 +53,8 @@ const USAGE = `Usage: node tools/render.mjs --timeline <file> [options]
   --keep-frames        keep every frame as PNG next to the video
   --verify <n>         redraw n frames in a fresh page, in reverse order, and
                        require the same bytes (default: 0, off)
-  --supersample <n>    canvas pixels per output pixel (default: 2)
+  --supersample <n>    canvas pixels per output pixel; 2 is smoother and about
+                       three times slower (default: 1)
   --crf <n>            x264 quality, lower is better (default: 16)
   --param <k=v>        extra URL parameter for the page (repeatable)
   --chromium <path>    Chromium executable (default: $CHROMIUM_PATH, else PATH)
@@ -61,7 +62,7 @@ const USAGE = `Usage: node tools/render.mjs --timeline <file> [options]
 `;
 
 export function parseArgs(argv) {
-  const opts = { preset: 'both', out: 'out', frames: null, stills: [], stillsOnly: false, keepFrames: false, verify: 0, supersample: 2, crf: 16, params: [] };
+  const opts = { preset: 'both', out: 'out', frames: null, stills: [], stillsOnly: false, keepFrames: false, verify: 0, supersample: 1, crf: 16, params: [] };
   const flags = { '--stills-only': 'stillsOnly', '--keep-frames': 'keepFrames' };
   const values = { '--timeline': 'timeline', '--page': 'page', '--preset': 'preset', '--out': 'out', '--name': 'name', '--fps': 'fps', '--frames': 'frames', '--stills': 'stills', '--verify': 'verify', '--supersample': 'supersample', '--crf': 'crf', '--chromium': 'chromium', '--ffmpeg': 'ffmpeg' };
   for (let i = 0; i < argv.length; i++) {
@@ -90,7 +91,7 @@ export function parseArgs(argv) {
 }
 
 // The URL that shows frame n of a timeline on a page, bare of controls.
-export function pageUrl(origin, page, { timeline, fps, frame = 0, supersample = 2, params = [] }) {
+export function pageUrl(origin, page, { timeline, fps, frame = 0, supersample = 1, params = [] }) {
   const q = new URLSearchParams({ fps: String(fps), frame: String(frame), timeline, ui: '0', px: String(supersample) });
   for (const pair of params) { const [k, ...v] = pair.split('='); q.set(k, v.join('=')); }
   return `${origin}/${page}?${q}`;
@@ -153,9 +154,12 @@ async function openPage(browser, size, url) {
   const failure = await page.evaluate(() => window.__frameError ?? null);
   if (failure) throw new Error(`the page reported: ${failure}`);
   if (await page.evaluate(() => typeof window.__setFrame !== 'function')) throw new Error('the page has no window.__setFrame: it has not adopted scene-clock.js');
+  // Straight to the DevTools protocol: one capture of the viewport per frame.
+  const devtools = await context.newCDPSession(page);
   const draw = async n => {
     await page.evaluate(frame => window.__setFrame(frame), n);
-    return page.screenshot({ type: 'png' });
+    const shot = await devtools.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    return Buffer.from(shot.data, 'base64');
   };
   return { draw, close: () => context.close(), problems };
 }

@@ -18,8 +18,9 @@ test('real time is the default and steps exactly as the page loops did', () => {
   assert.equal(clock.tick(1016), (1016 - 1000) / 1000);
   assert.equal(clock.tick(1516), MAX_REAL_STEP);            // a stall is clamped to 50 ms
   assert.ok(Math.abs(clock.time - (0.016 + MAX_REAL_STEP)) < 1e-12);
-  clock.drawn(); clock.drawn();
+  clock.drawn(); clock.tick(1532);
   assert.equal('__frameReady' in host, false);
+  assert.equal(clock.settled, false);
   assert.equal('__setFrame' in host, false);
 });
 
@@ -36,25 +37,46 @@ test('fixed step: time is frame / fps whatever the wall clock says', () => {
 
 test('fixed step: __frameReady is raised only after the frame has been drawn', async () => {
   const host = {}, clock = createSceneClock({ search: '?fps=25&frame=3', now: () => 0, host });
+  const loop = (draw = true) => { clock.tick(); if (draw && !clock.settled) clock.drawn(); };
   assert.equal(host.__frameReady, false);
+  clock.tick();
+  assert.equal(host.__frameReady, false, 'not before the page has drawn');
   clock.drawn();
-  assert.equal(host.__frameReady, false);
-  clock.drawn();
+  assert.equal(host.__frameReady, false, 'not until the loop comes round again');
+  assert.equal(clock.settled, false);
+  clock.tick();
   assert.equal(host.__frameReady, true);
+  assert.equal(clock.settled, true);
 
   let resolved = null;
   const pending = host.__setFrame(50).then(n => { resolved = n; });
   assert.equal(host.__frameReady, false);
+  assert.equal(clock.settled, false);
   assert.equal(clock.time, 2);
-  clock.drawn();
+  loop();
   await Promise.resolve();
   assert.equal(resolved, null);
-  clock.drawn();
+  loop();
   await pending;
   assert.equal(resolved, 50);
   assert.equal(host.__frameReady, true);
   await assert.rejects(clock.setFrame(-1), RangeError);
   await assert.rejects(clock.setFrame(2.5), RangeError);
+});
+
+test('fixed step: invalidate asks for the same frame to be drawn again', () => {
+  const host = {}, clock = createSceneClock({ search: '?frame=9', now: () => 0, host });
+  clock.tick(); clock.drawn(); clock.tick();
+  assert.equal(clock.settled, true);
+  clock.invalidate();
+  assert.equal(clock.settled, false);
+  assert.equal(host.__frameReady, false);
+  assert.equal(clock.frame, 9);
+  clock.tick(); clock.drawn(); clock.tick();
+  assert.equal(host.__frameReady, true);
+  const real = createSceneClock({ search: '', now: () => 0, host: {} });
+  real.drawn(); real.invalidate(); real.tick(16);
+  assert.equal(real.settled, false, 'real time never settles');
 });
 
 test('frames can be selected in any order', () => {

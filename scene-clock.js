@@ -12,14 +12,13 @@
 //
 // A page adopts the clock by calling tick(now) at the top of its animation loop,
 // deriving its state from clock.time when clock.fixed is set, and calling drawn()
-// after it has rendered.
+// after it has rendered. A frame counts as drawn at the first tick after its
+// drawn(): by then the loop has handed the picture to the compositor. From then
+// on clock.settled is true, and a page may skip redrawing until the frame
+// changes or it calls invalidate() (after user input, a resize, a late load).
 
 export const DEFAULT_FPS = 30;
 export const MAX_REAL_STEP = 0.05;
-
-// A frame counts as drawn once the loop has rendered it twice: the second pass
-// proves the first one has been handed to the compositor.
-const SETTLE_DRAWS = 2;
 
 export function parseClockParams(search = '') {
   const q = new URLSearchParams(search);
@@ -40,7 +39,7 @@ export function createSceneClock({
   host = globalThis.window ?? null
 } = {}) {
   const params = parseClockParams(search);
-  let last = now(), frame = params.frame, draws = 0;
+  let last = now(), frame = params.frame, draws = 0, settled = false;
   let time = params.fixed ? frame / params.fps : 0;
   let waiting = [];
 
@@ -50,11 +49,20 @@ export function createSceneClock({
     timeline: params.timeline,
     get time() { return time; },
     get frame() { return frame; },
+    get settled() { return settled; },
 
     // Real time: advance by the clamped wall-clock step and return it.
     // Fixed step: time does not move here, so the step is zero.
     tick(t = now()) {
-      if (clock.fixed) return 0;
+      if (clock.fixed) {
+        if (draws > 0 && !settled) {
+          settled = true;
+          if (host) host.__frameReady = true;
+          const done = waiting; waiting = [];
+          for (const resolve of done) resolve(frame);
+        }
+        return 0;
+      }
       const dt = Math.min(MAX_REAL_STEP, (t - last) / 1000);
       last = t; time += dt;
       return dt;
@@ -65,17 +73,21 @@ export function createSceneClock({
     setFrame(n) {
       if (!Number.isInteger(n) || n < 0) return Promise.reject(new RangeError(`frame must be a non-negative integer, got ${n}`));
       clock.fixed = true;
-      frame = n; time = n / clock.fps; draws = 0;
-      if (host) host.__frameReady = false;
+      frame = n; time = n / clock.fps;
+      clock.invalidate();
       return new Promise(resolve => waiting.push(resolve));
     },
 
     // The page calls this after rendering the state at clock.time.
     drawn() {
-      if (!clock.fixed || ++draws < SETTLE_DRAWS) return;
-      if (host) host.__frameReady = true;
-      const done = waiting; waiting = [];
-      for (const resolve of done) resolve(frame);
+      if (clock.fixed) draws++;
+    },
+
+    // The picture no longer matches the state (input, resize): draw it again.
+    invalidate() {
+      if (!clock.fixed) return;
+      draws = 0; settled = false;
+      if (host) host.__frameReady = false;
     }
   };
 

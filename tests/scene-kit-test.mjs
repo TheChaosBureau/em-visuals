@@ -51,7 +51,7 @@ test('render presets: wide 1920×1080 and vertical 1080×1920 at 30 fps', () => 
 test('render drives the page in fixed-step mode and encodes H.264 yuv420p', () => {
   const url = new URL(pageUrl('http://127.0.0.1:8000', 'power-box.html', { timeline: 'timelines/power-box-steady.json', fps: 30, frame: 120 }));
   assert.equal(url.pathname, '/power-box.html');
-  assert.deepEqual(Object.fromEntries(url.searchParams), { fps: '30', frame: '120', timeline: 'timelines/power-box-steady.json', ui: '0', px: '2' });
+  assert.deepEqual(Object.fromEntries(url.searchParams), { fps: '30', frame: '120', timeline: 'timelines/power-box-steady.json', ui: '0', px: '1' });
   const args = ffmpegArgs({ fps: 30, crf: 16, output: 'out/clip.mp4' });
   const value = flag => args[args.indexOf(flag) + 1];
   assert.equal(value('-framerate'), '30');
