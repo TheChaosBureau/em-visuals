@@ -581,6 +581,12 @@ const eArrows = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({
 }));
 eArrows.frustumCulled = false; modelRoot.add(eArrows);
 
+// These buffers are rewritten every frame. three.js sorts translucent objects by
+// the bounding sphere it computes on the first draw, so pin the sphere to the
+// model origin: the draw order against the translucent core then no longer
+// depends on which frame happened to be drawn first.
+for (const g of [lineGeo, partGeo, eGeo]) g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
+
 function ramp(u) {
   u = u < 0 ? 0 : u > 1 ? 1 : u;
   for (let i = 0; i < FLUX_RAMP.length - 1; i++) {
