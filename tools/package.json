@@ -1,0 +1,12 @@
+{
+  "name": "em-visuals-tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline tooling for em-visuals (frame capture). Not part of the published site.",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.1"
+  }
+}
