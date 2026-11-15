@@ -1,0 +1,41 @@
+{
+  "title": "From a steady box to sinusoidal slices, with a phase offset",
+  "page": "power-box.html",
+  "duration": 20,
+  "fps": 30,
+  "ease": "ease-in-out",
+  "camera": [
+    { "t": 0, "target": [1.2, 0.84, 0.55], "orbit": { "azimuth": -35, "elevation": 22, "distance": 8.8 }, "fov": 30 },
+    { "t": 2.6 },
+    { "t": 6, "orbit": { "azimuth": -24, "elevation": 26, "distance": 8.8 } },
+    { "t": 16.2 },
+    { "t": 20, "orbit": { "azimuth": -38, "elevation": 21, "distance": 8.8 } }
+  ],
+  "params": {
+    "potential": 12,
+    "flow": 2,
+    "duration": 3,
+    "frequency": 0.6666666666666666,
+    "playhead": 3,
+    "mode": [[2.6, 0], [6, 1]],
+    "phase": [[9.6, 0], [16.2, 90]]
+  },
+  "cues": [
+    { "type": "caption", "in": -1, "out": 2.6, "text": "A steady [potential](potential) and a steady [flow](flow): a plain box, 72 joules." },
+    { "type": "caption", "in": 2.6, "out": 6.2, "text": "Now let both swing as sinusoids, in step with each other." },
+    { "type": "caption", "in": 6.2, "out": 9.6, "text": "Each slice is the rectangle at one instant. Same peaks, half the [energy](power)." },
+    { "type": "caption", "in": 9.6, "out": 13, "text": "Let the [flow](flow) lag the [potential](potential) by a phase angle φ." },
+    { "type": "caption", "in": 13, "out": 16.6, "text": "[Red](back) slices: potential and flow disagree, and power [flows back](back)." },
+    { "type": "caption", "in": 16.6, "out": 21, "text": "A quarter cycle apart, everything sent out comes back. Net energy: zero." },
+
+    { "type": "equation", "in": -1, "out": 2.6, "text": "E = v × i × t = {energy}" },
+    { "type": "equation", "in": 2.9, "out": 6.2, "text": "v = V̂ cos ω t,  i = Î cos(ω t − φ)" },
+    { "type": "equation", "in": 6.4, "out": 21, "text": "E = ∫ p dt = {energy}" },
+
+    { "type": "label", "in": -1, "out": 21, "anchor": "potential", "title": "potential", "text": "{potential}{peak}", "color": "potential" },
+    { "type": "label", "in": -1, "out": 21, "anchor": "flow", "title": "flow", "text": "{flow}{peak}", "color": "flow" },
+    { "type": "label", "in": -1, "out": 9.4, "anchor": "time", "title": "time", "text": "{time}", "color": "time" },
+    { "type": "label", "in": 9.9, "out": 21, "anchor": "energy", "side": "top", "title": "phase angle", "text": "{phase}", "color": "face" },
+    { "type": "label", "in": 13.2, "out": 21, "anchor": "time", "title": "flowing back", "text": "{backflow}", "note": "of every cycle", "color": "back" }
+  ]
+}

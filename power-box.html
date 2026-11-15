@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Power box — power as an area, energy as a volume</title>
+<style>
+:root{
+  --bg:#080b0f; --panel:#0e141b; --panel-2:#131b24; --rule:#1e2a35;
+  --ink:#cbd7e1; --ink-dim:#7d8f9d; --ink-faint:#4e5d69;
+  --accent:#ffc857;
+  --volt:#42d7e7; --amp:#cc76ff; --watt:#ffc857; --back:#e8544b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg)}
+body{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--ink); font-size:12px; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+#stage{position:fixed;inset:0 0 0 274px}
+canvas#gl{display:block;width:100%;height:100%;touch-action:none}
+
+/* ---------------------------------------------------------------- panel */
+#rail{
+  position:fixed; top:0; left:0; bottom:0; width:274px; z-index:10;
+  background:linear-gradient(180deg,#0e141b 0%,#0b1017 100%);
+  border-right:1px solid var(--rule);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#rail header{padding:16px 16px 12px;border-bottom:1px solid var(--rule);flex:none}
+#rail h1{
+  font-family:system-ui,sans-serif;
+  font-weight:700; font-size:16px; letter-spacing:.01em; line-height:1.15; color:#eef4f8;
+}
+#rail h1 em{font-style:normal;color:var(--accent)}
+.sub{margin-top:5px;color:var(--ink-faint);font-size:10.5px;line-height:1.5}
+.build-info{margin-top:7px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}
+.build-info code{color:var(--ink-dim);font:inherit}
+#scroll{flex:1;overflow-y:auto;overscroll-behavior:contain}
+#scroll::-webkit-scrollbar{width:7px}
+#scroll::-webkit-scrollbar-thumb{background:#1c2731;border-radius:4px}
+section{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:system-ui,sans-serif;font-weight:600;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
+  margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline;
+}
+.eyebrow b{font-family:ui-monospace,monospace;font-weight:500;color:var(--ink-dim);letter-spacing:0;text-transform:none}
+
+/* toggles */
+.row{display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;user-select:none}
+.row:hover .lbl{color:#eef4f8}
+.box{
+  width:13px;height:13px;flex:none;border:1px solid #354553;border-radius:2.5px;
+  background:#0a1016;position:relative;transition:all .12s;
+}
+.row input{position:absolute;opacity:0;width:0;height:0}
+.row input:checked + .box{background:var(--accent);border-color:var(--accent)}
+.row input:checked + .box::after{
+  content:"";position:absolute;left:3.5px;top:1px;width:4px;height:7.5px;
+  border:solid #071014;border-width:0 2px 2px 0;transform:rotate(42deg);
+}
+.row input:focus-visible + .box{outline:2px solid var(--accent);outline-offset:2px}
+.lbl{color:var(--ink);transition:color .12s}
+.swatch{width:9px;height:9px;border-radius:50%;flex:none;margin-left:auto}
+
+/* segmented */
+.seg{display:grid;gap:3px;margin-top:2px}
+.seg button{
+  font:inherit;font-size:11px;text-align:left;padding:7px 9px;cursor:pointer;
+  background:#0a1016;color:var(--ink-dim);border:1px solid #24303b;border-radius:3px;
+  transition:all .12s;
+}
+.seg button:hover{color:var(--ink);border-color:#33434f}
+.seg button[aria-pressed="true"]{background:#2e2610;color:var(--accent);border-color:#6b5320}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg small{display:block;color:var(--ink-faint);font-size:9.5px;margin-top:2px}
+.seg button[aria-pressed="true"] small{color:#93803f}
+
+/* slider */
+.sl{display:flex;align-items:center;gap:10px;padding:4px 0}
+.sl label{color:var(--ink-dim);flex:none;width:62px;font-size:10.5px}
+.sl input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;background:none;height:16px;cursor:pointer}
+.sl input[type=range]::-webkit-slider-runnable-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-moz-range-track{height:2px;background:#28343f;border-radius:2px}
+.sl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent);
+  margin-top:-4.5px;box-shadow:0 0 0 3px rgba(255,200,87,.14);
+}
+.sl input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-radius:50%;background:var(--accent)}
+.sl input[type=range]:disabled{cursor:default;opacity:.55}
+.sl b{font-weight:500;color:var(--ink);width:46px;text-align:right;font-size:10.5px;flex:none;font-variant-numeric:tabular-nums}
+
+/* readouts */
+table.rd{width:100%;border-collapse:collapse;font-size:11px}
+table.rd td{padding:3px 0}
+table.rd td:first-child{color:var(--ink-dim)}
+table.rd td:last-child{text-align:right;font-variant-numeric:tabular-nums;color:#eef4f8}
+table.rd tr.primary td:last-child{color:var(--accent)}
+.note{color:var(--ink-faint);font-size:10px;line-height:1.65}
+.note b{color:var(--ink-dim);font-weight:500}
+
+/* --------------------------------------------------------------- overlays */
+#hint{
+  position:fixed;right:14px;bottom:14px;z-index:10;color:var(--ink-faint);
+  font-size:10px;text-align:right;line-height:1.6;pointer-events:none;
+}
+#toggleRail{
+  position:fixed;top:12px;left:12px;z-index:20;display:none;
+  font:inherit;font-size:11px;padding:7px 11px;border-radius:3px;cursor:pointer;
+  background:rgba(14,20,27,.92);color:var(--ink);border:1px solid var(--rule);
+}
+
+/* ?ui=0 — the bare stage, for frame capture */
+body.clean #stage{inset:0}
+body.clean #rail,body.clean #hint,body.clean #toggleRail,body.clean #VRButton{display:none!important}
+
+@media (max-width:820px){
+  #stage{inset:0 0 56% 0}
+  body.rail-hidden #stage{inset:0}
+  #rail{width:100%;height:56%;top:auto;bottom:0;border-right:none;border-top:1px solid var(--rule)}
+  #rail.hidden{display:none}
+  #toggleRail{display:block}
+  #hint{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="gl"></canvas><div id="overlay"></div></div>
+<button id="toggleRail" aria-expanded="true">Controls</button>
+
+<aside id="rail">
+  <header>
+    <h1>Power box —<br><em>energy as a volume</em></h1>
+    <div class="sub">Potential times flow is an area: power. Pull that area through time and the volume is energy.</div>
+    <div class="build-info">build <code>__BUILD_HASH__</code> · published <time datetime="__BUILD_TIME__">__BUILD_TIME__</time></div>
+    <div class="sub"><a href="./rotating-field-machine.html">rotating machine</a> · <a href="./delta-wye-transformer.html">transformer</a> · <a href="./overhead-line-power-flow.html">overhead line</a></div>
+  </header>
+
+  <div id="scroll">
+    <section>
+      <div class="eyebrow">Edges</div>
+      <div class="sl"><label style="color:var(--volt)">potential</label><input type="range" id="sV" min="0" max="24" step="0.5" value="12"><b id="vV">12 V</b></div>
+      <div class="sl"><label style="color:var(--amp)">flow</label><input type="range" id="sI" min="0" max="4" step="0.1" value="2"><b id="vI">2 A</b></div>
+      <div class="sl"><label>duration</label><input type="range" id="sD" min="1" max="6" step="0.5" value="3"><b id="vD">3 s</b></div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Mode</div>
+      <div class="seg" id="modes" style="grid-template-columns:1fr 1fr">
+        <button data-m="0" aria-pressed="true">Steady<small>constant cross-section</small></button>
+        <button data-m="1" aria-pressed="false">Sinusoidal<small>slices breathe with ωt</small></button>
+      </div>
+      <div class="sl" style="margin-top:7px"><label>phase φ</label><input type="range" id="sP" min="0" max="180" step="1" value="0"><b id="vP">0°</b></div>
+      <div class="sl"><label>frequency</label><input type="range" id="sF" min="0.5" max="3" step="0.5" value="1"><b id="vF">1 Hz</b></div>
+      <div class="note" style="margin-top:5px">Sinusoidal: v = V̂ cos ωt, i = Î cos(ωt − φ). Each slice is the rectangle |v| × |i| at its instant; where v·i is negative it is drawn <b style="color:var(--back)">red</b> — power on its way back.</div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Time</div>
+      <div class="sl"><label>playhead</label><input type="range" id="sT" min="0" max="3" step="0.01" value="3"><b id="vT">3 s</b></div>
+      <div class="seg" style="grid-template-columns:1fr 1fr;margin-top:7px">
+        <button id="bPlay" aria-pressed="false">Play</button>
+        <button id="bView">Face the rectangle</button>
+      </div>
+    </section>
+
+    <section id="readout">
+      <div class="eyebrow">Readout <b id="rT">t 3 s</b></div>
+      <table class="rd">
+        <tr><td><span style="color:var(--volt)">■</span> potential <span id="nV">v</span></td><td id="rV">12 V</td></tr>
+        <tr><td><span style="color:var(--amp)">■</span> flow <span id="nI">i</span></td><td id="rI">2 A</td></tr>
+        <tr class="primary"><td><span style="color:var(--watt)">■</span> power v × i</td><td id="rP">24 W</td></tr>
+        <tr><td>charge ∫ i dt</td><td id="rQ">6 C</td></tr>
+        <tr><td>volt-seconds ∫ v dt</td><td id="rL">36 V·s</td></tr>
+        <tr class="primary"><td>energy ∫ p dt</td><td id="rE">72 J</td></tr>
+      </table>
+      <div id="cycle" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)">
+        <table class="rd">
+          <tr><td>mean power</td><td id="rM">—</td></tr>
+          <tr><td><span style="color:var(--back)">■</span> share flowing back</td><td id="rB">—</td></tr>
+        </table>
+        <div class="note" style="margin-top:8px">Mean power is V<sub>rms</sub> I<sub>rms</sub> cos φ. Power runs backward for <b>φ/π</b> of every cycle.</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Labels</div>
+      <label class="row"><input type="checkbox" id="cL" checked><span class="box"></span><span class="lbl">Edge labels</span></label>
+      <label class="row"><input type="checkbox" id="cF" checked><span class="box"></span><span class="lbl">Face labels</span></label>
+      <label class="row"><input type="checkbox" id="cG" checked><span class="box"></span><span class="lbl">Unit grid</span></label>
+    </section>
+
+    <section>
+      <div class="eyebrow">Reading the model</div>
+      <div class="note">
+        Each edge of the box measures one quantity: <b style="color:var(--volt)">potential</b> in volts, <b style="color:var(--amp)">flow</b> in amperes, <b>time</b> in seconds, each to its own scale. Each face is the product of its two edges: potential × flow is <b style="color:var(--watt)">power</b> (W), flow × time is charge (C), potential × time is volt-seconds (V·s). The volume is energy (J). With the unit grid on, every cell on a face is one unit of that product.<br><br>These are state-space axes, not directions in space: nothing here is a field.
+      </div>
+    </section>
+  </div>
+</aside>
+
+<div id="hint">drag orbit · shift-drag pan · scroll zoom</div>
+
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from './vendor/VRButton.js';
+import { applyDeadzone, nextScale, pressedEdge } from './xr-controls.js';
+import { createSceneClock } from './scene-clock.js';
+import { loadTimeline, shortSideFov } from './timeline.js';
+import { createOverlay, stageLayout } from './overlay.js';
+import {
+  DEFAULTS, potentialAt, flowAt, powerAt, energyAt, chargeAt, voltSecondsAt, meanPower, backflowFraction, sliceCount, slices
+} from './power-box-model.js';
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   Constants. Each axis has its own scale (scene units per volt, ampere,
+   second), chosen so the worked example — 12 V, 2 A, 3 s — is a well
+   proportioned box. See power-box-model.js for the quantities themselves.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const RAD = Math.PI / 180;
+const SV = 0.14, SI = 0.55, ST = 0.8;          // potential → y, flow → z, time → x
+const MAX_SLICES = 240;
+const R_AXIS = 0.017, R_EDGE = 0.011, R_LIVE = 0.014;
+const HERO = { th: -35 * RAD, ph: 68 * RAD, r: 8.8 };
+const FOV = 30;                                 // across the short side of the frame
+
+const CSS = { potential: '#42d7e7', flow: '#cc76ff', time: '#cbd7e1', power: '#ffc857', back: '#e8544b', face: '#cbd7e1' };
+const HEX = Object.fromEntries(Object.entries(CSS).map(([k, v]) => [k, new THREE.Color(v)]));
+// Base colours of the solid. Its material skips tone mapping, so a fully lit
+// face shows exactly these and the shaded faces are darker steps of the same hue.
+const SOLID = { power: new THREE.Color('#ffcc5e'), back: new THREE.Color('#ee5148') };
+
+const query = new URLSearchParams(location.search);
+const clean = query.get('ui') === '0';                    // bare stage for frame capture
+const forceSprites = query.get('labels') === 'sprite';    // preview the WebXR label fallback
+const pixelRatio = Number(query.get('px')) > 0 ? Math.min(Number(query.get('px')), 4) : Math.min(devicePixelRatio, 2);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.body.classList.toggle('clean', clean);
+
+const clock = createSceneClock();
+let timeline = null, ready = !clock.timeline;
+
+// Page state: what the sliders hold. A timeline, when present, overrides it.
+const S = {
+  potential: DEFAULTS.potential, flow: DEFAULTS.flow, duration: DEFAULTS.duration,
+  mode: 0, phase: 0, frequency: DEFAULTS.frequency,
+  playhead: reduceMotion ? DEFAULTS.duration : 0, playing: !reduceMotion,
+  showEdges: true, showFaces: true, showGrid: true
+};
+
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+const smooth = u => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scene
+   ═══════════════════════════════════════════════════════════════════════════ */
+const stage = document.getElementById('stage');
+const cv = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false });
+renderer.setPixelRatio(pixelRatio);
+renderer.setClearColor(0x080b0f, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+renderer.xr.setFramebufferScaleFactor(0.9);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 400);
+
+// Lit so the three visible faces of the box are three clear steps of one hue:
+// top brightest, the power rectangle next, the long side darkest.
+scene.add(new THREE.HemisphereLight(0xffffff, 0x39424b, 1.15));
+const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(-7, 7, 3); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(4, 2, 7); scene.add(fill);
+
+// The model is Y-up, like the WebXR tracking space. Immersive placement lives
+// in its own root so the thumbsticks can turn and scale the whole model.
+const xrPlacement = new THREE.Group(); scene.add(xrPlacement);
+const modelRoot = new THREE.Group(); xrPlacement.add(modelRoot);
+
+// ── camera rig (hand-rolled orbit, Y-up; th is the azimuth from +Z toward +X) ─
+const cam = { tgt: new THREE.Vector3(), r: HERO.r, th: HERO.th, ph: HERO.ph };
+let userMoved = false;
+function applyCam() {
+  const sp = Math.sin(cam.ph), cp = Math.cos(cam.ph);
+  camera.position.set(
+    cam.tgt.x + cam.r * sp * Math.sin(cam.th),
+    cam.tgt.y + cam.r * cp,
+    cam.tgt.z + cam.r * sp * Math.cos(cam.th));
+  camera.up.set(0, 1, 0);
+  camera.lookAt(cam.tgt);
+}
+(function orbit() {
+  let drag = null, px = 0, py = 0;
+  cv.addEventListener('pointerdown', e => {
+    drag = (e.shiftKey || e.button === 2) ? 'pan' : 'rot';
+    px = e.clientX; py = e.clientY; cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY;
+    if (drag === 'rot') {
+      cam.th -= dx * 0.006;
+      cam.ph = Math.max(0.05, Math.min(Math.PI - 0.05, cam.ph - dy * 0.006));
+    } else {
+      const rt = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+      const up = new THREE.Vector3().crossVectors(rt, camera.getWorldDirection(new THREE.Vector3())).normalize();
+      cam.tgt.addScaledVector(rt, -dx * cam.r * 0.0016).addScaledVector(up, dy * cam.r * 0.0016);
+      userMoved = true;
+    }
+  });
+  const stop = e => { drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
+  cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.r = Math.max(2.5, Math.min(40, cam.r * Math.exp(e.deltaY * 0.0011)));
+  }, { passive: false });
+  // pinch
+  let pd = 0;
+  cv.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pd) cam.r = Math.max(2.5, Math.min(40, cam.r * pd / d));
+    pd = d;
+  }, { passive: true });
+  cv.addEventListener('touchend', () => pd = 0);
+})();
+
+/* ───────────────────────────────────────────────────────────── the solid */
+// Slices along time. In steady mode they touch and read as one box; in
+// sinusoidal mode each carries the rectangle |v| × |i| of its instant.
+const slabs = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, toneMapped: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+  MAX_SLICES);
+slabs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+slabs.setColorAt(0, SOLID.power); slabs.instanceColor.setUsage(THREE.DynamicDrawUsage);
+slabs.frustumCulled = false; modelRoot.add(slabs);
+const _m = new THREE.Matrix4();
+
+function updateSolid(P, G) {
+  let count = 0;
+  if (G.Y1 > 1e-4 && G.Z1 > 1e-4) {
+    const gap = 0.08 * smooth(P.mode);
+    for (const s of slices(P.model, Math.max(P.playhead, 1e-9), G.n)) {
+      // a rectangle not yet pulled through time is drawn as a sheet
+      const len = Math.max((s.t1 - s.t0) * ST, 0.004);
+      const h = Math.max(s.absV * SV, 0.002), d = Math.max(s.absI * SI * P.fill, 0.002);
+      _m.makeScale(len * (1 - gap) + 0.002, h, d).setPosition(s.t0 * ST + len / 2, h / 2, d / 2);
+      slabs.setMatrixAt(count, _m);
+      slabs.setColorAt(count, s.negative ? SOLID.back : SOLID.power);
+      count++;
+    }
+  }
+  slabs.count = count;
+  slabs.instanceMatrix.needsUpdate = true; slabs.instanceColor.needsUpdate = true;
+}
+
+/* ──────────────────────────────────────────────────────────────── edges */
+// Every edge is coloured by the quantity it measures, so every face is framed
+// by the colours of its two factors.
+const gEdges = new THREE.Group(); modelRoot.add(gEdges);
+const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 16, 1, false);
+const jointGeo = new THREE.SphereGeometry(1, 16, 12);
+const Y_AXIS = new THREE.Vector3(0, 1, 0), _a = new THREE.Vector3(), _d = new THREE.Vector3();
+
+function makeBeam(colour, radius) {
+  const mesh = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: colour, toneMapped: false }));
+  mesh.userData.radius = radius; gEdges.add(mesh);
+  return mesh;
+}
+function fade(material, opacity) {
+  const transparent = opacity < 1;
+  // three.js compiles opacity out of an opaque material, so the switch needs a rebuild
+  if (material.transparent !== transparent) { material.transparent = transparent; material.depthWrite = !transparent; material.needsUpdate = true; }
+  material.opacity = opacity;
+}
+function setBeam(mesh, ax, ay, az, bx, by, bz, opacity = 1) {
+  _a.set(ax, ay, az); _d.set(bx - ax, by - ay, bz - az);
+  const len = _d.length();
+  mesh.visible = len > 1e-4 && opacity > 0.004;
+  if (!mesh.visible) return;
+  mesh.position.copy(_a).addScaledVector(_d, 0.5);
+  mesh.quaternion.setFromUnitVectors(Y_AXIS, _d.multiplyScalar(1 / len));
+  mesh.scale.set(mesh.userData.radius, len, mesh.userData.radius);
+  fade(mesh.material, opacity);
+}
+function makeJoint(radius) {
+  const mesh = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xeef4f8, toneMapped: false }));
+  mesh.scale.setScalar(radius); gEdges.add(mesh);
+  return mesh;
+}
+function setJoint(mesh, x, y, z, opacity = 1) {
+  mesh.visible = opacity > 0.004;
+  mesh.position.set(x, y, z);
+  fade(mesh.material, opacity);
+}
+
+const E = {
+  potential: makeBeam(HEX.potential, R_AXIS), flow: makeBeam(HEX.flow, R_AXIS), time: makeBeam(HEX.time, R_AXIS),
+  // the rest of the box: v = parallel to potential, i = to flow, t = to time
+  v: [0, 1, 2].map(() => makeBeam(HEX.potential, R_EDGE)),
+  i: [0, 1, 2].map(() => makeBeam(HEX.flow, R_EDGE)),
+  t: [0, 1, 2].map(() => makeBeam(HEX.time, R_EDGE)),
+  // the rectangle at the playhead, in sinusoidal mode
+  live: [makeBeam(HEX.potential, R_LIVE), makeBeam(HEX.potential, R_LIVE), makeBeam(HEX.flow, R_LIVE), makeBeam(HEX.flow, R_LIVE)],
+  joints: [0, 1, 2, 3, 4, 5, 6, 7].map(() => makeJoint(R_AXIS * 1.35))
+};
+
+function updateEdges(P, G) {
+  const { X1, Y1, Z1, ZF } = G, m = smooth(P.mode);
+  const ghost = 1 - 0.74 * m;                 // the steady box stays as a faint reference
+  const far = X1 > 1e-4 ? ghost : 0, wide = Z1 > 1e-4 ? ghost : 0;
+  setBeam(E.potential, 0, 0, 0, 0, Y1, 0);
+  setBeam(E.flow, 0, 0, 0, 0, 0, ZF);
+  setBeam(E.time, 0, 0, 0, X1, 0, 0);
+  setBeam(E.v[0], 0, 0, Z1, 0, Y1, Z1, wide);          // the potential edge, swept along the flow edge
+  setBeam(E.i[0], 0, Y1, 0, 0, Y1, Z1, ghost);
+  setBeam(E.t[0], 0, Y1, 0, X1, Y1, 0, ghost);
+  setBeam(E.t[1], 0, 0, Z1, X1, 0, Z1, wide);
+  setBeam(E.t[2], 0, Y1, Z1, X1, Y1, Z1, wide);
+  setBeam(E.v[1], X1, 0, 0, X1, Y1, 0, far);
+  setBeam(E.v[2], X1, 0, Z1, X1, Y1, Z1, Math.min(far, wide));
+  setBeam(E.i[1], X1, 0, 0, X1, 0, Z1, far);
+  setBeam(E.i[2], X1, Y1, 0, X1, Y1, Z1, far);
+
+  // the rectangle of this instant leads the solid, and retires once the sweep is done
+  const lv = G.liveV, li = G.liveI, show = X1 > 1e-4 ? m * clamp((P.duration - P.playhead) / (0.06 * P.duration), 0, 1) : 0;
+  setBeam(E.live[0], X1, 0, 0, X1, lv, 0, show);
+  setBeam(E.live[1], X1, 0, li, X1, lv, li, show);
+  setBeam(E.live[2], X1, 0, 0, X1, 0, li, show);
+  setBeam(E.live[3], X1, lv, 0, X1, lv, li, show);
+
+  const j = E.joints, has = Y1 > 1e-4 || ZF > 1e-4 ? 1 : 0;
+  setJoint(j[0], 0, 0, 0, has);
+  setJoint(j[1], 0, Y1, 0, Y1 > 1e-4 ? 1 : 0);
+  setJoint(j[2], 0, 0, ZF, ZF > 1e-4 ? 1 : 0);
+  setJoint(j[3], 0, Y1, Z1, Y1 > 1e-4 ? wide : 0);
+  setJoint(j[4], X1, 0, 0, X1 > 1e-4 ? 1 : 0);
+  setJoint(j[5], X1, Y1, 0, Y1 > 1e-4 ? far : 0);
+  setJoint(j[6], X1, 0, Z1, Math.min(far, wide));
+  setJoint(j[7], X1, Y1, Z1, Y1 > 1e-4 ? Math.min(far, wide) : 0);
+}
+
+/* ─────────────────────────────────────────────────────────── unit grid */
+// One line per volt, ampere and second on the faces of the steady box: each
+// cell is one unit of that face's product, each block one joule.
+const GRID_MAX = 260;
+const gridGeo = new THREE.BufferGeometry();
+gridGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(GRID_MAX * 2 * 3), 3));
+const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x2a1f08, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false }));
+grid.frustumCulled = false; modelRoot.add(grid);
+
+function updateGrid(P, G) {
+  const alpha = (1 - smooth(P.mode * 3)) * (P.showGrid ? 1 : 0);
+  grid.visible = alpha > 0.004 && G.Y1 > 1e-4 && G.Z1 > 1e-4;
+  if (!grid.visible) return;
+  grid.material.opacity = 0.42 * alpha;
+  const pos = gridGeo.attributes.position.array;
+  // drawn a hair outside the faces (a sheet not yet pulled through time has two)
+  const e = 0.003, x0 = -e, y0 = -e, z0 = -e, x1 = Math.max(G.X1, 0.004) + e, y1 = G.Y1 + e, z1 = G.Z1 + e;
+  let n = 0;
+  const seg = (ax, ay, az, bx, by, bz) => {
+    if (n >= GRID_MAX) return;
+    pos.set([ax, ay, az, bx, by, bz], n * 6); n++;
+  };
+  for (let k = 1; k * SV < G.Y1 - 1e-6; k++) {        // every volt
+    const y = k * SV;
+    seg(x0, y, z0, x0, y, z1); seg(x1, y, z0, x1, y, z1); seg(x0, y, z0, x1, y, z0); seg(x0, y, z1, x1, y, z1);
+  }
+  for (let k = 1; k * SI < G.Z1 - 1e-6; k++) {        // every ampere
+    const z = k * SI;
+    seg(x0, y0, z, x0, y1, z); seg(x1, y0, z, x1, y1, z); seg(x0, y0, z, x1, y0, z); seg(x0, y1, z, x1, y1, z);
+  }
+  for (let k = 1; k * ST < G.X1 - 1e-6; k++) {        // every second
+    const x = k * ST;
+    seg(x, y0, z0, x, y1, z0); seg(x, y0, z1, x, y1, z1); seg(x, y0, z0, x, y0, z1); seg(x, y1, z0, x, y1, z1);
+  }
+  gridGeo.setDrawRange(0, n * 2);
+  gridGeo.attributes.position.needsUpdate = true;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   State for one frame. With a timeline every value is stateAt(t) of the clock
+   time; without one the sliders hold the values and only the playhead moves.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TIMELINE_REST = 2;         // seconds a looping preview holds its last frame
+
+function frameState(dt) {
+  let P;
+  if (timeline) {
+    const t = clock.fixed ? clock.time : clock.time % (timeline.duration + TIMELINE_REST);
+    const st = timeline.stateAt(t), p = st.params;
+    const duration = Math.max(p.duration ?? S.duration, 1e-3);
+    P = {
+      potential: Math.max(p.potential ?? S.potential, 0), flow: Math.max(p.flow ?? S.flow, 0), duration,
+      mode: clamp(p.mode ?? 0, 0, 1), phase: p.phase ?? 0, frequency: Math.max(p.frequency ?? S.frequency, 0),
+      playhead: clamp(p.playhead ?? duration, 0, duration), fill: clamp(p.fill ?? 1, 0, 1),
+      showGrid: (p.grid ?? 1) > 0.5, camera: st.camera, cues: st.cues, scripted: true
+    };
+  } else {
+    if (clock.fixed) S.playhead = Math.min(clock.time, S.duration);
+    else if (S.playing) {
+      S.playhead += dt;
+      if (S.playhead >= S.duration) { S.playhead = S.duration; setPlaying(false); }
+    }
+    P = {
+      potential: S.potential, flow: S.flow, duration: S.duration, mode: S.mode, phase: S.phase, frequency: S.frequency,
+      playhead: clamp(S.playhead, 0, S.duration), fill: 1, showGrid: S.showGrid, camera: null, cues: null, scripted: false
+    };
+  }
+  P.model = { potential: P.potential, flow: P.flow, duration: P.duration, mode: P.mode, phi: P.phase * RAD, frequency: P.frequency };
+  return P;
+}
+
+// Scene-space extents of the box drawn for P.
+function extents(P) {
+  const ZF = P.flow * SI;
+  return {
+    X1: P.playhead * ST, Y1: P.potential * SV, ZF, Z1: ZF * P.fill,
+    liveV: Math.abs(potentialAt(P.model, P.playhead)) * SV,
+    liveI: Math.abs(flowAt(P.model, P.playhead)) * SI * P.fill,
+    n: sliceCount(P.model)
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Words on screen: labels, captions, equations (overlay.js)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const overlay = createOverlay({
+  root: document.getElementById('overlay'), colors: CSS, THREE, spriteParent: modelRoot,
+  symbols: { v: 'potential', V: 'potential', 'V̂': 'potential', i: 'flow', I: 'flow', 'Î': 'flow', p: 'power', P: 'power', E: 'power', t: 'time', T: 'time' }
+});
+
+function quantity(x, unit) {
+  const a = Math.abs(x) < 5e-4 ? 0 : x, mag = Math.abs(a);
+  let s = a.toFixed(mag >= 100 ? 0 : mag >= 10 ? 1 : 2);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s.replace('-', '−') + (unit === '°' || unit === '%' ? unit : ' ' + unit);
+}
+
+function readouts(P) {
+  const t = P.playhead, M = P.model;
+  return {
+    potential: quantity(P.potential, 'V'), flow: quantity(P.flow, 'A'), time: quantity(t, 's'), duration: quantity(P.duration, 's'),
+    power: quantity(powerAt(M, t), 'W'), charge: quantity(chargeAt(M, t), 'C'), voltseconds: quantity(voltSecondsAt(M, t), 'V·s'),
+    energy: quantity(energyAt(M, t), 'J'), total: quantity(energyAt(M, P.duration), 'J'),
+    mean: quantity(meanPower(M), 'W'), phase: quantity(Math.round(P.phase), '°'), frequency: quantity(P.frequency, 'Hz'),
+    backflow: quantity(Math.round(100 * backflowFraction(M, 720)), '%'), peak: P.mode > 0.5 ? ' peak' : ''
+  };
+}
+
+// What the page shows when no timeline is scripting the cues.
+function defaultCues(P) {
+  const cues = [], sine = P.mode > 0.5;
+  if (S.showEdges) cues.push(
+    { type: 'label', id: 'e-v', anchor: 'potential', title: 'potential', text: '{potential}{peak}', color: 'potential' },
+    { type: 'label', id: 'e-i', anchor: 'flow', title: 'flow', text: '{flow}{peak}', color: 'flow' },
+    { type: 'label', id: 'e-t', anchor: 'time', title: 'time', text: '{time}', color: 'time' });
+  if (S.showFaces && !sine) cues.push(
+    { type: 'label', id: 'f-p', anchor: 'power', title: 'power', text: '{power}', note: 'potential × flow', color: 'power' },
+    { type: 'label', id: 'f-q', anchor: 'charge', title: 'charge', text: '{charge}', note: 'flow × time', color: 'face' },
+    { type: 'label', id: 'f-l', anchor: 'voltseconds', title: 'volt-seconds', text: '{voltseconds}', note: 'potential × time', color: 'face' });
+  cues.push({ type: 'equation', id: 'eq', text: sine ? 'E = ∫ p dt = {energy}' : 'E = v × i × t = {energy}' });
+  return cues;
+}
+
+// Named points for labels. An edge label picks, among the four parallel edges
+// of the box, one on the silhouette, so its text lands beside the box rather
+// than across it; `out` points away from the box.
+const _eye = new THREE.Vector3();
+function anchorResolver(G, project, eye) {
+  const { X1, Y1, Z1, ZF } = G, flat = X1 < 1e-3, thin = Z1 < 1e-3;
+  const front = { x0: eye.x < 0, x1: eye.x > X1, y0: eye.y < 0, y1: eye.y > Y1, z0: eye.z < 0, z1: eye.z > Z1 };
+  const unit = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+  // candidates: [point, out, faceA, faceB, isAxisEdge]
+  function pick(list, prefer) {
+    const rim = list.filter(c => front[c.a] !== front[c.b]);
+    const axis = rim.find(c => c.axis);
+    if (axis || !rim.length) return axis ?? list.find(c => c.axis);
+    return rim.map(c => ({ c, s: project(c.point) })).sort((p, q) => prefer(p.s) - prefer(q.s))[0].c;
+  }
+  const edges = {
+    potential: () => {
+      if (flat || thin) return { point: [0, Y1 / 2, 0], out: [0, 0, -1] };
+      const list = [];
+      for (const [x, a] of [[0, 'x0'], [X1, 'x1']]) for (const [z, b] of [[0, 'z0'], [Z1, 'z1']])
+        list.push({ point: [x, Y1 / 2, z], out: unit([x - X1 / 2, 0, z - Z1 / 2]), a, b, axis: x === 0 && z === 0 });
+      return pick(list, s => s[0]);                      // else the leftmost
+    },
+    flow: () => {
+      if (flat) return { point: [0, 0, ZF / 2], out: [0, -1, 0] };
+      const list = [];
+      for (const [x, a] of [[0, 'x0'], [X1, 'x1']]) for (const [y, b] of [[0, 'y0'], [Y1, 'y1']])
+        list.push({ point: [x, y, Z1 / 2], out: unit([x - X1 / 2, y - Y1 / 2, 0]), a, b, axis: x === 0 && y === 0 });
+      return pick(list, s => -s[1]);                     // else the lowest
+    },
+    time: () => {
+      const list = [];
+      for (const [y, a] of [[0, 'y0'], [Y1, 'y1']]) for (const [z, b] of [[0, 'z0'], [Z1, 'z1']])
+        list.push({ point: [X1 / 2, y, z], out: unit([0, y - Y1 / 2, z - Z1 / 2]), a, b, axis: false });
+      const rim = list.filter(c => front[c.a] !== front[c.b]);
+      return (rim.length ? rim : list).map(c => ({ c, s: project(c.point) })).sort((p, q) => q.s[1] - p.s[1])[0].c;   // the lowest
+    }
+  };
+  const faces = {
+    power: () => eye.x > X1 / 2 && !flat ? { point: [X1, Y1 / 2, Z1 / 2], out: [1, 0, 0] } : { point: [0, Y1 / 2, Z1 / 2], out: [-1, 0, 0] },
+    charge: () => eye.y >= Y1 / 2 ? { point: [X1 / 2, Y1, Z1 / 2], out: [0, 1, 0] } : { point: [X1 / 2, 0, Z1 / 2], out: [0, -1, 0] },
+    voltseconds: () => eye.z >= Z1 / 2 ? { point: [X1 / 2, Y1 / 2, Z1], out: [0, 0, 1] } : { point: [X1 / 2, Y1 / 2, 0], out: [0, 0, -1] },
+    energy: () => ({ point: [X1 / 2, Y1, Z1 / 2], out: [0, 1, 0] }),
+    live: () => ({ point: [X1, G.liveV, G.liveI / 2], out: [0, 1, 0] }),
+    origin: () => ({ point: [0, 0, 0], out: unit([-1, -1, -1]) }),
+    // where the WebXR fallback hangs the caption and the equation
+    caption: () => ({ point: [X1 / 2, -0.5, Z1 + 0.35] }),
+    equation: () => ({ point: [X1 / 2, Math.max(Y1, G.liveV) + 0.7, Z1 / 2] })
+  };
+  return name => (edges[name] ?? faces[name])?.() ?? null;
+}
+
+const _p = new THREE.Vector3();
+let viewW = 1, viewH = 1;
+function project(point) {
+  _p.set(point[0], point[1], point[2]).applyMatrix4(modelRoot.matrixWorld).project(camera);
+  return [(_p.x * 0.5 + 0.5) * viewW, (-_p.y * 0.5 + 0.5) * viewH, _p.z > -1 && _p.z < 1];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WebXR — view-only, like the transformer page: the right stick turns the
+   model, the left stick scales it. A replays the sweep through time, B resets
+   the placement. Labels become sprites in the scene.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const XR_FIT = 0.3;
+let xrScale = 1;
+const xrButtons = { right: [false, false] };
+function resetXRPlacement() {
+  xrScale = 1;
+  xrPlacement.position.set(0, 1.15, -1.5);
+  xrPlacement.rotation.set(0, 0.5, 0);
+  xrPlacement.scale.setScalar(XR_FIT);
+}
+
+function updateXRControls(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const axes = source.gamepad.axes;
+    const [x0, y0] = axes.length >= 4 ? [axes[2], axes[3]] : [axes[0] || 0, axes[1] || 0];
+    const x = applyDeadzone(x0);
+    const y = applyDeadzone(y0);
+    if (source.handedness === 'left') {
+      xrScale = nextScale(xrScale, y, dt);
+      xrPlacement.scale.setScalar(XR_FIT * xrScale);
+    } else if (source.handedness === 'right') {
+      xrPlacement.rotation.y -= x * dt * 1.5;
+      xrPlacement.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, xrPlacement.rotation.x + y * dt * 1.2));
+      const a = !!source.gamepad.buttons[4]?.pressed;
+      const b = !!source.gamepad.buttons[5]?.pressed;
+      if (pressedEdge(a, xrButtons.right[0])) bPlay.click();
+      if (pressedEdge(b, xrButtons.right[1])) resetXRPlacement();
+      xrButtons.right[0] = a; xrButtons.right[1] = b;
+    }
+  }
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+  resetXRPlacement();
+  renderer.xr.setFoveation(0.75);
+});
+renderer.xr.addEventListener('sessionend', () => {
+  xrPlacement.position.set(0, 0, 0);
+  xrPlacement.rotation.set(0, 0, 0);
+  xrPlacement.scale.setScalar(1);
+  modelRoot.position.set(0, 0, 0);
+  xrButtons.right.fill(false);
+  resize();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Frame — read the clock, derive the state, redraw the solid, its edges and
+   the words, render.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function frame(now) {
+  const dt = clock.tick(now);
+  if (!ready) return;
+  const presenting = renderer.xr.isPresenting;
+  if (presenting) updateXRControls(dt);
+
+  const P = frameState(dt), G = extents(P);
+  updateSolid(P, G);
+  updateEdges(P, G);
+  updateGrid(P, G);
+
+  if (presenting) {
+    // turn and scale about the middle of the box
+    modelRoot.position.set(-P.duration * ST / 2, -G.Y1 / 2, -G.ZF / 2);
+  } else {
+    const layout = stageLayout(viewW, viewH);
+    if (P.camera) {
+      camera.position.fromArray(P.camera.position);
+      camera.up.fromArray(P.camera.up);
+      camera.lookAt(P.camera.target[0], P.camera.target[1], P.camera.target[2]);
+    } else {
+      if (!userMoved) cam.tgt.set(P.duration * ST / 2, G.Y1 / 2, G.ZF / 2);
+      applyCam();
+    }
+    // The scripted field of view spans the short side of the frame, and the
+    // picture is centred on the stage between the equation and the caption.
+    camera.fov = shortSideFov(P.camera?.fov ?? FOV, viewW / viewH);
+    camera.setViewOffset(viewW, viewH, viewW / 2 - layout.centre[0], viewH / 2 - layout.centre[1], viewW, viewH);
+    camera.updateProjectionMatrix();
+  }
+  scene.updateMatrixWorld();
+  camera.updateMatrixWorld();
+
+  const values = readouts(P);
+  const eye = modelRoot.worldToLocal(_eye.setFromMatrixPosition((presenting ? renderer.xr.getCamera() : camera).matrixWorld));
+  overlay.update({
+    cues: P.cues ?? defaultCues(P), width: viewW, height: viewH, project, values,
+    anchors: anchorResolver(G, project, eye),
+    obstacle: [0, 1].flatMap(a => [0, 1].flatMap(b => [0, 1].map(c => [a * G.X1, b * Math.max(G.Y1, 1e-3), c * Math.max(G.ZF, 1e-3)]))),
+    sprites: presenting || forceSprites
+  });
+  syncPanel(P, values);
+
+  renderer.render(scene, camera);
+  clock.drawn();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const sV = $('sV'), sI = $('sI'), sD = $('sD'), sP = $('sP'), sF = $('sF'), sT = $('sT'), bPlay = $('bPlay');
+
+function bindSlider(el, key, after) {
+  el.addEventListener('input', () => { if (!timeline) { S[key] = +el.value; after?.(); } });
+}
+bindSlider(sV, 'potential'); bindSlider(sI, 'flow'); bindSlider(sP, 'phase'); bindSlider(sF, 'frequency');
+bindSlider(sD, 'duration', () => { S.playhead = Math.min(S.playhead, S.duration); if (!S.playing) S.playhead = S.duration; });
+bindSlider(sT, 'playhead', () => setPlaying(false));
+
+function bindBox(id, key) {
+  const el = $(id);
+  el.checked = S[key];
+  el.addEventListener('change', () => S[key] = el.checked);
+}
+bindBox('cL', 'showEdges'); bindBox('cF', 'showFaces'); bindBox('cG', 'showGrid');
+
+$('modes').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || timeline) return;
+  S.mode = +b.dataset.m;
+});
+
+function setPlaying(value) {
+  S.playing = value;
+  bPlay.textContent = value ? 'Pause' : 'Play';
+  bPlay.setAttribute('aria-pressed', String(value));
+}
+setPlaying(S.playing);
+bPlay.addEventListener('click', () => {
+  if (timeline) return;
+  if (!S.playing && S.playhead >= S.duration - 1e-6) S.playhead = 0;      // replay from the start
+  setPlaying(!S.playing);
+});
+
+let faceOn = false;
+$('bView').addEventListener('click', e => {
+  faceOn = !faceOn; userMoved = false;
+  if (faceOn) { cam.th = -Math.PI / 2; cam.ph = Math.PI / 2 - 0.0001; cam.r = 9.5; e.target.textContent = 'Three-quarter view'; }
+  else { cam.th = HERO.th; cam.ph = HERO.ph; cam.r = HERO.r; e.target.textContent = 'Face the rectangle'; }
+});
+
+// Mirror the frame's state into the panel (the timeline moves the sliders too).
+function syncPanel(P, values) {
+  if (clean) return;
+  const sine = P.mode > 0.5;
+  const set = (el, value) => { if (document.activeElement !== el || P.scripted) el.value = value; };
+  set(sV, P.potential); set(sI, P.flow); set(sD, P.duration); set(sP, P.phase); set(sF, P.frequency);
+  sT.max = P.duration; set(sT, P.playhead);
+  $('vV').textContent = values.potential; $('vI').textContent = values.flow; $('vD').textContent = values.duration;
+  $('vP').textContent = values.phase; $('vF').textContent = values.frequency; $('vT').textContent = values.time;
+  for (const b of document.querySelectorAll('#modes button')) b.setAttribute('aria-pressed', String((+b.dataset.m === 1) === sine));
+  sP.disabled = sF.disabled = !sine || P.scripted;
+  sV.disabled = sI.disabled = sD.disabled = sT.disabled = P.scripted;
+  $('rT').textContent = 't ' + values.time;
+  $('nV').textContent = sine ? 'v(t)' : 'v'; $('nI').textContent = sine ? 'i(t)' : 'i';
+  $('rV').textContent = quantity(potentialAt(P.model, P.playhead), 'V');
+  $('rI').textContent = quantity(flowAt(P.model, P.playhead), 'A');
+  $('rP').textContent = values.power; $('rQ').textContent = values.charge; $('rL').textContent = values.voltseconds; $('rE').textContent = values.energy;
+  $('cycle').style.display = sine ? 'block' : 'none';
+  if (sine) { $('rM').textContent = values.mean; $('rB').textContent = values.backflow; }
+}
+
+$('toggleRail').addEventListener('click', e => {
+  const hid = $('rail').classList.toggle('hidden');
+  document.body.classList.toggle('rail-hidden', hid);
+  e.target.setAttribute('aria-expanded', String(!hid));
+  resize();
+});
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+  if (e.code === 'Space') { e.preventDefault(); bPlay.click(); }
+});
+
+function resize() {
+  viewW = Math.max(1, stage.clientWidth); viewH = Math.max(1, stage.clientHeight);
+  if (renderer.xr.isPresenting) return;
+  renderer.setSize(viewW, viewH, false);
+  camera.aspect = viewW / viewH; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ─────────────────────────────────────────────────────────────────── boot */
+resize();
+if (!clean) document.body.appendChild(VRButton.createButton(renderer, { optionalFeatures: ['local-floor'] }));
+if (clock.timeline) {
+  loadTimeline(clock.timeline).then(loaded => { timeline = loaded; ready = true; }).catch(error => {
+    console.error(error);
+    window.__frameError = String(error.message ?? error);
+    $('hint').textContent = 'timeline: ' + window.__frameError;
+  });
+}
+renderer.setAnimationLoop(frame);
+</script>
+</body>
+</html>
