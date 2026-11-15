@@ -53,8 +53,8 @@ const USAGE = `Usage: node tools/render.mjs --timeline <file> [options]
   --keep-frames        keep every frame as PNG next to the video
   --verify <n>         redraw n frames in a fresh page, in reverse order, and
                        require the same bytes (default: 0, off)
-  --supersample <n>    canvas pixels per output pixel; 2 is smoother and about
-                       three times slower (default: 1)
+  --supersample <n>    canvas pixels per output pixel; 2 is smoother and
+                       slower (default: 1)
   --crf <n>            x264 quality, lower is better (default: 16)
   --param <k=v>        extra URL parameter for the page (repeatable)
   --chromium <path>    Chromium executable (default: $CHROMIUM_PATH, else PATH)

@@ -90,7 +90,7 @@ That writes `out/power-box-steady-wide.mp4` and `out/power-box-steady-vertical.m
 
 The tool needs a Chromium and an ffmpeg that are already installed: pass `--chromium <path>` / `--ffmpeg <path>`, set `CHROMIUM_PATH` / `FFMPEG_PATH`, or have them on `PATH`. With Nix: `nix shell nixpkgs#chromium nixpkgs#ffmpeg -c node tools/render.mjs --timeline …`.
 
-Useful options (`--help` lists all): `--preset wide|vertical|both`, `--stills 0,90,300` to also save those frames as PNG, `--stills-only`, `--keep-frames`, `--frames 0-149`, `--supersample 2` for smoother edges at about three times the render time, and `--verify 12` to redraw 12 frames in a fresh page, in reverse order, and require byte-identical PNGs.
+Useful options (`--help` lists all): `--preset wide|vertical|both`, `--stills 0,90,300` to also save those frames as PNG, `--stills-only`, `--keep-frames`, `--frames 0-149`, `--supersample 2` for smoother edges at a longer render time, and `--verify 12` to redraw 12 frames in a fresh page, in reverse order, and require byte-identical PNGs.
 
 Headless WebGL: the tool launches Chromium with
 
@@ -99,7 +99,7 @@ Headless WebGL: the tool launches Chromium with
 --force-color-profile=srgb --font-render-hinting=none --disable-lcd-text --hide-scrollbars
 ```
 
-The first line selects ANGLE's software rasterizer (SwiftShader), which is what worked here with Chromium 143 on a machine with no GPU (WebGL 2, 4× MSAA); the second keeps colour and text rendering the same from run to run. Rendering is on the CPU: a 20 s clip (600 frames) took about two minutes per preset on a 12-core machine. Text uses the fonts installed on the rendering machine.
+The first line selects ANGLE's software rasterizer (SwiftShader), which is what worked here with Chromium 143 on a machine with no GPU (WebGL 2, 4× MSAA); the second keeps colour and text rendering the same from run to run. Rendering is on the CPU: on a 12-core machine a 20 s power-box clip (600 frames) took about two minutes per preset, and the rotating-field clip, which retraces its field lines every frame, about eight. Text uses the fonts installed on the rendering machine.
 
 A frame is a function of its number only: the same frame drawn in another page, after different frames, or after loading at a different frame gives a byte-identical PNG on the same machine. `--verify` checks exactly that, and two runs can be compared by their `.frames.sha256` files.
 
